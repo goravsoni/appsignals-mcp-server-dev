@@ -33,7 +33,8 @@ def _initialize_aws_clients():
     user_agent_suffix = f'/{mcp_source}' if mcp_source else ''
 
     config = Config(
-        user_agent_extra=f'awslabs.cloudwatch-applicationsignals-mcp-server/{__version__}{user_agent_suffix}'
+        user_agent_extra=f'awslabs.cloudwatch-applicationsignals-mcp-server/{__version__}{user_agent_suffix}',
+        max_pool_connections=25,
     )
 
     # Get endpoint URLs from environment variables

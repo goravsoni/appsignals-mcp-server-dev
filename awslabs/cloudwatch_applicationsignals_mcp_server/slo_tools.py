@@ -18,6 +18,7 @@ import json
 from .aws_clients import applicationsignals_client, AWS_REGION
 from .utils import console_url_slo
 from botocore.exceptions import ClientError
+from datetime import datetime, timezone
 from loguru import logger
 from pydantic import Field
 from time import perf_counter as timer
@@ -357,6 +358,30 @@ async def list_slos(
             result += f'  Operation: {operation_name}\n'
             result += f'  Created: {created_time}\n'
             result += f'  Console: {console_url_slo(slo_name, AWS_REGION)}\n'
+
+            # Fetch attainment data for this SLO
+            try:
+                now = datetime.now(timezone.utc)
+                # Get the SLO goal
+                slo_detail_resp = applicationsignals_client.get_service_level_objective(Id=slo_arn)
+                slo_detail = slo_detail_resp.get('Slo', {})
+                goal = slo_detail.get('Goal', {})
+                attainment_goal = goal.get('AttainmentGoal', 99.0)
+
+                # Get current attainment via budget report
+                budget_resp = applicationsignals_client.batch_get_service_level_objective_budget_report(
+                    SloIds=[slo_arn],
+                    Timestamp=now,
+                )
+                budget_reports = budget_resp.get('Reports', [])
+                if budget_reports:
+                    report = budget_reports[0]
+                    attainment_val = report.get('Attainment', None)
+                    if attainment_val is not None:
+                        status_icon = '✅' if attainment_val >= attainment_goal else '❌'
+                        result += f'  Attainment: {attainment_val:.1f}% (Goal: {attainment_goal:.1f}%) {status_icon}\n'
+            except Exception as attainment_err:
+                logger.debug(f'Attainment fetch skipped for {slo_name}: {attainment_err}')
 
             # Add key attributes if available
             key_attrs = slo.get('KeyAttributes', {})

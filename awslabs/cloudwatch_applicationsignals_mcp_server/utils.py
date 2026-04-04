@@ -14,6 +14,7 @@
 
 """CloudWatch Application Signals MCP Server - Utility functions."""
 
+import time
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
@@ -212,6 +213,12 @@ def calculate_name_similarity(
 
 
 # =============================================================================
+# SERVICE CACHE
+# =============================================================================
+_service_cache: Dict[str, Any] = {"data": None, "timestamp": 0.0, "ttl": 60}
+
+
+# =============================================================================
 # COMMON UTILITIES FOR GROUP AND SERVICE TOOLS
 # =============================================================================
 
@@ -311,6 +318,15 @@ def list_services_paginated(
     Raises:
         Exception: If API call fails
     """
+    # Check cache first
+    now = time.time()
+    if (
+        _service_cache["data"] is not None
+        and (now - _service_cache["timestamp"]) < _service_cache["ttl"]
+    ):
+        logger.info(f'Returning {len(_service_cache["data"])} cached services (age: {now - _service_cache["timestamp"]:.1f}s)')
+        return _service_cache["data"]
+
     all_services = []
     next_token = None
     page_count = 0
@@ -337,6 +353,11 @@ def list_services_paginated(
         logger.info(
             f'Completed service listing: {len(all_services)} total services across {page_count} pages'
         )
+
+        # Update cache
+        _service_cache["data"] = all_services
+        _service_cache["timestamp"] = time.time()
+
         return all_services
 
     except Exception as e:

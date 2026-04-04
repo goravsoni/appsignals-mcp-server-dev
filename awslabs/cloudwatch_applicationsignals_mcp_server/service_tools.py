@@ -510,7 +510,18 @@ async def query_service_metrics(
                             result += f'Baseline Comparison (vs previous {hours}h):\n'
                             result += f'• Current {statistic}: {current_avg:.2f}\n'
                             result += f'• Previous {statistic}: {baseline_avg:.2f}\n'
-                            result += f'• Change: {direction} {delta_pct:+.1f}%\n\n'
+                            result += f'• Change: {direction} {delta_pct:+.1f}%\n'
+
+                            # Anomaly detection: standard deviation analysis
+                            if len(baseline_vals) > 1:
+                                import statistics
+                                baseline_std = statistics.stdev(baseline_vals)
+                                if baseline_std > 0:
+                                    z_score = (current_avg - baseline_avg) / baseline_std
+                                    anomaly_flag = ' ⚠️ ANOMALY' if abs(z_score) > 2 else ''
+                                    result += f'• Deviation: {z_score:+.1f}σ from baseline{anomaly_flag}\n'
+
+                            result += '\n'
             except Exception as baseline_err:
                 logger.debug(f'Baseline comparison skipped: {baseline_err}')
 

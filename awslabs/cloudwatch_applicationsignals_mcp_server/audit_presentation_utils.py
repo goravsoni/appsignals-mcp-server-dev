@@ -20,6 +20,36 @@ from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
 
 
+def generate_runbook_recommendations(finding: Dict[str, Any], region: str) -> str:
+    """Map finding types to specific AWS CLI commands for runbook-style recommendations.
+
+    Args:
+        finding: A single audit finding dictionary
+        region: AWS region string
+
+    Returns:
+        Formatted string with recommended CLI actions
+    """
+    description = (finding.get('Description') or '').lower()
+    finding_id = finding.get('FindingId', '<FindingId>')
+    lines: List[str] = []
+    lines.append('📋 Recommended Actions:')
+
+    if 'slo' in description or 'breach' in description:
+        lines.append(f'  aws application-signals get-service-level-objective --slo-id {finding_id} --region {region}')
+    elif 'error' in description or 'fault' in description:
+        lines.append(f'  aws cloudwatch get-metric-data --region {region} --metric-data-queries \'[{{"Id":"m1","MetricStat":{{"Metric":{{"Namespace":"AWS/ApplicationSignals","MetricName":"Error"}},"Period":300,"Stat":"Average"}}}}]\' --start-time $(date -u -d "1 hour ago" +%Y-%m-%dT%H:%M:%S) --end-time $(date -u +%Y-%m-%dT%H:%M:%S)')
+    elif 'latency' in description:
+        lines.append(f'  aws xray get-trace-summaries --region {region} --start-time $(date -u -d "1 hour ago" +%s) --end-time $(date -u +%s) --filter-expression \'duration > 5\'')
+    elif 'dns' in description or 'resolution' in description:
+        lines.append('  nslookup <service-endpoint>')
+        lines.append(f'  aws ec2 describe-vpc-endpoints --region {region} --query "VpcEndpoints[*].DnsEntries"')
+    else:
+        lines.append(f'  aws application-signals list-audit-findings --region {region}')
+
+    return '\n'.join(lines) + '\n'
+
+
 def format_severity_summary_line(findings: List[Dict[str, Any]]) -> str:
     """One-line severity summary for the top of audit output."""
     if not findings:
@@ -133,7 +163,11 @@ def format_findings_summary(findings: List[Dict[str, Any]], audit_type: str = 's
             except Exception:
                 pass  # Gracefully skip if timestamp parsing fails
             summary += f'**{finding_counter}.** Finding ID: {finding_id}{onset_str}\n'
-            summary += f'   💬 {description}\n\n'
+            summary += f'   💬 {description}\n'
+            # Append runbook recommendations for critical findings
+            from .aws_clients import AWS_REGION
+            summary += generate_runbook_recommendations(finding, AWS_REGION)
+            summary += '\n'
             finding_counter += 1
 
     if warning_findings:
