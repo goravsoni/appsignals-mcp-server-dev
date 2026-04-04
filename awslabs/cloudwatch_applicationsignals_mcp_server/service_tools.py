@@ -23,7 +23,9 @@ from pydantic import Field
 from time import perf_counter as timer
 
 
-async def list_monitored_services() -> str:
+async def list_monitored_services(
+    max_results: int = Field(default=50, description='Maximum number of services to return'),
+) -> str:
     """OPTIONAL TOOL for service discovery - audit_services() can automatically discover services using wildcard patterns.
 
     **IMPORTANT: For service auditing and operation analysis, use audit_services() as the PRIMARY tool instead.**
@@ -81,9 +83,10 @@ async def list_monitored_services() -> str:
         # Get all services
         logger.debug(f'Querying services for time range: {start_time} to {end_time}')
         response = applicationsignals_client.list_services(
-            StartTime=start_time, EndTime=end_time, MaxResults=100
+            StartTime=start_time, EndTime=end_time, MaxResults=max_results
         )
         services = response.get('ServiceSummaries', [])
+        has_more_services = response.get('NextToken') is not None
         logger.debug(f'Retrieved {len(services)} services from Application Signals')
 
         if not services:
@@ -157,6 +160,9 @@ async def list_monitored_services() -> str:
                 env = key_attrs.get('Environment', 'Unknown')
                 result += f'  • {svc_name} ({env}) — {inst_type}\n'
             result += '\nTo enable instrumentation on these services, use the get_enablement_guide tool.\n\n'
+
+        if has_more_services:
+            result += '📄 Note: More services are available. Increase max_results to see additional services.\n\n'
 
         elapsed_time = timer() - start_time_perf
         logger.debug(f'list_monitored_services completed in {elapsed_time:.3f}s')

@@ -181,6 +181,10 @@ async def audit_services(
         default=3,
         description='Optional. Maximum number of services to process per call when using wildcard patterns (default: 3, max: 10). This controls pagination size for service discovery.',
     ),
+    timeout_seconds: int = Field(
+        default=25,
+        description='Maximum seconds for audit execution. Returns partial results if exceeded.',
+    ),
 ) -> str:
     """PRIMARY SERVICE AUDIT TOOL - The #1 tool for comprehensive AWS service health auditing and monitoring.
 
@@ -329,6 +333,9 @@ async def audit_services(
     logger.debug('Starting audit_services (PRIMARY SERVICE AUDIT TOOL)')
 
     try:
+        # Compute deadline for timeout
+        deadline = start_time_perf + timeout_seconds
+
         # Region defaults
         region = AWS_REGION.strip()
 
@@ -443,6 +450,11 @@ async def audit_services(
         }
         if auditors_list:
             input_obj['Auditors'] = auditors_list
+
+        # Check deadline before executing audit API
+        if timer() > deadline:
+            elapsed = timer() - start_time_perf
+            return f'{banner}⏱️ Timeout: Audit preparation took {elapsed:.1f}s, exceeding the {timeout_seconds}s deadline. Try reducing max_services or narrowing service_targets.'
 
         # Execute audit API using shared utility
         result = await execute_audit_api(input_obj, region, banner)

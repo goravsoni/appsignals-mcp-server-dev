@@ -644,6 +644,7 @@ async def list_slis(
                 report = {
                     'BreachedSloCount': sli_report.breached_slo_count,
                     'BreachedSloNames': sli_report.breached_slo_names,
+                    'BreachedSloGoals': sli_report.breached_slo_goals,
                     'EndTime': sli_report.end_time.timestamp(),
                     'OkSloCount': sli_report.ok_slo_count,
                     'ReferenceId': {'KeyAttributes': service['KeyAttributes']},
@@ -664,6 +665,7 @@ async def list_slis(
                 report = {
                     'BreachedSloCount': 0,
                     'BreachedSloNames': [],
+                    'BreachedSloGoals': {},
                     'EndTime': end_time.timestamp(),
                     'OkSloCount': 0,
                     'ReferenceId': {'KeyAttributes': service['KeyAttributes']},
@@ -711,13 +713,18 @@ async def list_slis(
                     breached_count = report['BreachedSloCount']
                     total_count = report['TotalSloCount']
                     breached_names = report['BreachedSloNames']
+                    breached_goals = report.get('BreachedSloGoals', {})
 
                     result += f'\n• {name} ({env})\n'
                     result += f'  SLOs: {breached_count}/{total_count} breached\n'
                     if breached_names:
                         result += '  Breached SLOs:\n'
                         for slo_name in breached_names:
-                            result += f'    - {slo_name}\n'
+                            goal_pct = breached_goals.get(slo_name)
+                            if goal_pct is not None:
+                                result += f'    - {slo_name} (Goal: {goal_pct}%)\n'
+                            else:
+                                result += f'    - {slo_name}\n'
 
         if status_counts['OK'] > 0:
             result += '\n✅ HEALTHY SERVICES:\n'

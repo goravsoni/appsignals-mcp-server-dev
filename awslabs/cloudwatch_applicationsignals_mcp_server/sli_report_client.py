@@ -80,6 +80,7 @@ class SLOSummary:
         key_attributes (Dict): Service identification attributes
         operation_name (str): Name of the monitored operation
         created_time (datetime): When the SLO was created
+        goal (float): Attainment goal percentage (e.g. 99.0)
     """
 
     name: str
@@ -87,6 +88,7 @@ class SLOSummary:
     key_attributes: Dict[str, str]
     operation_name: str
     created_time: datetime
+    goal: float = 99.0
 
 
 @dataclass
@@ -118,6 +120,7 @@ class SLIReport:
         ok_slo_count: int,
         breached_slo_count: int,
         breached_slo_names: List[str],
+        breached_slo_goals: Optional[Dict[str, float]] = None,
     ):
         """Initialize SLIReport with metrics and status information.
 
@@ -129,6 +132,7 @@ class SLIReport:
             ok_slo_count: Number of SLOs meeting their objectives
             breached_slo_count: Number of SLOs failing to meet their objectives
             breached_slo_names: Names of SLOs that failed to meet their objectives
+            breached_slo_goals: Mapping of breached SLO names to their goal percentages
         """
         self._start_time = start_time
         self._end_time = end_time
@@ -137,6 +141,7 @@ class SLIReport:
         self._ok_slo_count = ok_slo_count
         self._breached_slo_count = breached_slo_count
         self._breached_slo_names = breached_slo_names
+        self._breached_slo_goals = breached_slo_goals or {}
 
     # Property getters for all attributes
     @property
@@ -173,6 +178,11 @@ class SLIReport:
     def breached_slo_names(self) -> List[str]:
         """Names of SLOs that failed to meet their objectives."""
         return self._breached_slo_names.copy()
+
+    @property
+    def breached_slo_goals(self) -> Dict[str, float]:
+        """Mapping of breached SLO names to their goal percentages."""
+        return self._breached_slo_goals.copy()
 
 
 class SLIReportClient:
@@ -224,6 +234,7 @@ class SLIReportClient:
                 key_attributes=slo.get('KeyAttributes', {}),
                 operation_name=slo.get('OperationName', 'N/A'),
                 created_time=slo.get('CreatedTime', datetime.now(timezone.utc)),
+                goal=slo.get('Goal', {}).get('AttainmentGoal', 99.0),
             )
             for slo in response['SloSummaries']
         ]
@@ -319,6 +330,12 @@ class SLIReportClient:
             else:
                 healthy_slos.append(slo_summaries[i].name)
 
+        # Build mapping of breached SLO names to their goal percentages
+        breached_slo_goals = {}
+        for i, result in enumerate(metric_results):
+            if result.values and len(result.values) > 0 and result.values[0] > 0:
+                breached_slo_goals[slo_summaries[i].name] = slo_summaries[i].goal
+
         logger.debug(
             f'SLI report generated - Total SLOs: {len(slo_summaries)}, Breaching: {len(breaching_slos)}, Healthy: {len(healthy_slos)}'
         )
@@ -330,4 +347,5 @@ class SLIReportClient:
             ok_slo_count=len(healthy_slos),
             breached_slo_count=len(breaching_slos),
             breached_slo_names=breaching_slos,
+            breached_slo_goals=breached_slo_goals,
         )

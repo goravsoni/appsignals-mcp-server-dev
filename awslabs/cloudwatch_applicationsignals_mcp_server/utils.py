@@ -73,16 +73,43 @@ def parse_timestamp(timestamp_str: str, default_hours: int = 24) -> datetime:
     """Parse timestamp string into datetime object.
 
     Args:
-        timestamp_str: Timestamp in unix seconds or 'YYYY-MM-DD HH:MM:SS' format
+        timestamp_str: Timestamp in unix seconds, 'YYYY-MM-DD HH:MM:SS' format,
+            ISO format, or natural language like 'last 3 hours', 'yesterday', 'today'
         default_hours: Default hours to subtract from now if parsing fails
 
     Returns:
         datetime object in UTC timezone
     """
+    import re as _re
+
     try:
         # Ensure we have a string
         if not isinstance(timestamp_str, str):
             timestamp_str = str(timestamp_str)
+
+        stripped = timestamp_str.strip().lower()
+
+        # Natural language: "last X hours/minutes/days"
+        last_match = _re.match(r'^last\s+(\d+)\s+(hour|minute|day)s?$', stripped)
+        if last_match:
+            amount = int(last_match.group(1))
+            unit = last_match.group(2)
+            if unit == 'hour':
+                return datetime.now(timezone.utc) - timedelta(hours=amount)
+            elif unit == 'minute':
+                return datetime.now(timezone.utc) - timedelta(minutes=amount)
+            elif unit == 'day':
+                return datetime.now(timezone.utc) - timedelta(days=amount)
+
+        # Natural language: "yesterday"
+        if stripped == 'yesterday':
+            now = datetime.now(timezone.utc)
+            return now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+
+        # Natural language: "today"
+        if stripped == 'today':
+            now = datetime.now(timezone.utc)
+            return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         # Try parsing as unix timestamp first
         if timestamp_str.isdigit():
