@@ -15,6 +15,7 @@
 """Utilities for presenting audit findings and managing user interaction."""
 
 import json
+from datetime import datetime, timezone
 from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -92,7 +93,28 @@ def format_findings_summary(findings: List[Dict[str, Any]], audit_type: str = 's
         for finding in critical_findings:
             finding_id = finding.get('FindingId', f'finding-{finding_counter}')
             description = finding.get('Description', 'No description available')
-            summary += f'**{finding_counter}.** Finding ID: {finding_id}\n'
+            # Calculate time-since-onset for critical findings
+            onset_str = ''
+            try:
+                finding_time = finding.get('StartTime') or finding.get('Timestamp') or finding.get('CreatedAt')
+                if finding_time:
+                    if isinstance(finding_time, str):
+                        finding_dt = datetime.fromisoformat(finding_time.replace('Z', '+00:00'))
+                    elif isinstance(finding_time, (int, float)):
+                        finding_dt = datetime.fromtimestamp(finding_time, tz=timezone.utc)
+                    else:
+                        finding_dt = finding_time if finding_time.tzinfo else finding_time.replace(tzinfo=timezone.utc)
+                    duration = datetime.now(timezone.utc) - finding_dt
+                    total_minutes = int(duration.total_seconds() / 60)
+                    if total_minutes >= 60:
+                        hours = total_minutes // 60
+                        mins = total_minutes % 60
+                        onset_str = f' (ongoing for {hours}h {mins}m)'
+                    elif total_minutes > 0:
+                        onset_str = f' (ongoing for {total_minutes}m)'
+            except Exception:
+                pass  # Gracefully skip if timestamp parsing fails
+            summary += f'**{finding_counter}.** Finding ID: {finding_id}{onset_str}\n'
             summary += f'   💬 {description}\n\n'
             finding_counter += 1
 

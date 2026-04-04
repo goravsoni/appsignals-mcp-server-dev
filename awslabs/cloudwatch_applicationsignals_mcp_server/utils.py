@@ -17,6 +17,24 @@
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
+
+
+def console_url_service(service_name: str, region: str) -> str:
+    """Generate an AWS Console deep-link to the Application Signals service detail page."""
+    encoded_name = quote(service_name, safe='')
+    return f'https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#application-signals:services/{encoded_name}'
+
+
+def console_url_slo(slo_name: str, region: str) -> str:
+    """Generate an AWS Console deep-link to the Application Signals SLO detail page."""
+    encoded_name = quote(slo_name, safe='')
+    return f'https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#application-signals:slos/{encoded_name}'
+
+
+def console_url_overview(region: str) -> str:
+    """Generate an AWS Console deep-link to the Application Signals overview page."""
+    return f'https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#application-signals:services'
 
 
 # =============================================================================

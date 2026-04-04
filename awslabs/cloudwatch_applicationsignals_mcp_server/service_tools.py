@@ -14,7 +14,8 @@
 
 """CloudWatch Application Signals MCP Server - Service-related tools."""
 
-from .aws_clients import applicationsignals_client, cloudwatch_client
+from .aws_clients import applicationsignals_client, cloudwatch_client, AWS_REGION
+from .utils import console_url_service
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta, timezone
 from loguru import logger
@@ -99,6 +100,7 @@ async def list_monitored_services() -> str:
 
             result += f'• Service: {service_name}\n'
             result += f'  Type: {service_type}\n'
+            result += f'  Console: {console_url_service(service_name, AWS_REGION)}\n'
 
             # Add key attributes
             if key_attrs:
@@ -432,6 +434,35 @@ async def query_service_metrics(
             result += f'• Minimum: {min_extended:.2f}\n\n'
 
         result += f'• Data Points: {len(datapoints)}\n\n'
+
+        # Baseline comparison: fetch previous equivalent period for context
+        try:
+            baseline_start = start_time - timedelta(hours=hours)
+            baseline_end = start_time
+            baseline_response = cloudwatch_client.get_metric_statistics(
+                Namespace=target_metric['Namespace'],
+                MetricName=target_metric['MetricName'],
+                Dimensions=target_metric.get('Dimensions', []),
+                StartTime=baseline_start,
+                EndTime=baseline_end,
+                Period=period,
+                Statistics=[statistic],
+            )
+            baseline_dps = baseline_response.get('Datapoints', [])
+            if baseline_dps and standard_values:
+                baseline_vals = [dp.get(statistic) for dp in baseline_dps if dp.get(statistic) is not None]
+                if baseline_vals:
+                    baseline_avg = sum(baseline_vals) / len(baseline_vals)
+                    current_avg = avg_of_standard
+                    if baseline_avg > 0:
+                        delta_pct = ((current_avg - baseline_avg) / baseline_avg) * 100
+                        direction = '📈' if delta_pct > 0 else '📉' if delta_pct < 0 else '➡️'
+                        result += f'Baseline Comparison (vs previous {hours}h):\n'
+                        result += f'• Current {statistic}: {current_avg:.2f}\n'
+                        result += f'• Previous {statistic}: {baseline_avg:.2f}\n'
+                        result += f'• Change: {direction} {delta_pct:+.1f}%\n\n'
+        except Exception as baseline_err:
+            logger.debug(f'Baseline comparison skipped: {baseline_err}')
 
         # Show recent values (last 10) with both metrics
         result += 'Recent Values:\n'

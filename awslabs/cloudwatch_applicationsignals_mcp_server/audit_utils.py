@@ -161,6 +161,22 @@ async def execute_audit_api(input_obj: Dict[str, Any], region: str, banner: str)
 
         except Exception as e:
             error_msg = str(e)
+            error_msg_lower = error_msg.lower()
+
+            # Build actionable guidance based on error type
+            if 'throttl' in error_msg_lower or 'rate' in error_msg_lower or 'TooManyRequestsException' in error_msg:
+                guidance = 'Rate limited by AWS API. Do NOT retry with the same parameters. Try reducing the number of targets or wait before retrying.'
+            elif 'AccessDenied' in error_msg or 'not authorized' in error_msg_lower:
+                guidance = 'Permission denied. The Lambda role may lack application-signals:ListAuditFindings permission. Do NOT retry — this will fail again with the same credentials.'
+            elif 'ResourceNotFoundException' in error_msg or 'not found' in error_msg_lower:
+                guidance = 'Target service or SLO not found. Use list_monitored_services() or list_slos() to verify available targets before retrying.'
+            elif 'ValidationException' in error_msg or 'validation' in error_msg_lower:
+                guidance = 'Invalid parameters. Check that service_targets JSON format is correct and service names match exactly.'
+            elif 'timeout' in error_msg_lower or 'timed out' in error_msg_lower:
+                guidance = 'API call timed out. Try with fewer targets (reduce max_services) or a shorter time range.'
+            else:
+                guidance = 'Unexpected error. Do NOT retry with identical parameters — try a different approach or narrower scope.'
+
             try:
                 with open(log_path, 'a') as f:
                     f.write(f'---- BATCH {batch_idx} API ERROR ----\n')
@@ -174,6 +190,7 @@ async def execute_audit_api(input_obj: Dict[str, Any], region: str, banner: str)
 
             batch_error_result = {
                 'error': f'API call failed: {error_msg}',
+                'guidance': guidance,
                 'targets': batch_targets,
             }
             all_batch_results.append(batch_error_result)
