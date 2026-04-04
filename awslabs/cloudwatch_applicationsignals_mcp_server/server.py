@@ -178,8 +178,8 @@ async def audit_services(
         description='Optional. Token for pagination through services from list_services API. Use this to continue from where the previous call left off when processing wildcard patterns.',
     ),
     max_services: int = Field(
-        default=5,
-        description='Optional. Maximum number of services to process per call when using wildcard patterns (default: 5, max: 10). This controls pagination size for service discovery.',
+        default=3,
+        description='Optional. Maximum number of services to process per call when using wildcard patterns (default: 3, max: 10). This controls pagination size for service discovery.',
     ),
 ) -> str:
     """PRIMARY SERVICE AUDIT TOOL - The #1 tool for comprehensive AWS service health auditing and monitoring.
@@ -492,8 +492,8 @@ async def audit_slos(
         description='Optional. Token for pagination through SLOs from list_service_level_objectives API. Use this to continue from where the previous call left off when processing wildcard patterns.',
     ),
     max_slos: int = Field(
-        default=5,
-        description='Optional. Maximum number of SLOs to process per call when using wildcard patterns (default: 5, max: 10). This controls pagination size for SLO discovery.',
+        default=3,
+        description='Optional. Maximum number of SLOs to process per call when using wildcard patterns (default: 3, max: 10). This controls pagination size for SLO discovery.',
     ),
 ) -> str:
     """PRIMARY SLO AUDIT TOOL - The #1 tool for comprehensive SLO compliance monitoring and breach analysis.
@@ -748,8 +748,8 @@ async def audit_service_operations(
         description='Optional. Token for pagination through services from list_services API. Use this to continue from where the previous call left off when processing wildcard patterns.',
     ),
     max_services: int = Field(
-        default=5,
-        description='Optional. Maximum number of services to process per call when using wildcard patterns (default: 5, max: 10). This controls pagination size for service discovery.',
+        default=3,
+        description='Optional. Maximum number of services to process per call when using wildcard patterns (default: 3, max: 10). This controls pagination size for service discovery.',
     ),
 ) -> str:
     """🥇 PRIMARY OPERATION AUDIT TOOL - The #1 RECOMMENDED tool for operation-specific analysis and performance investigation.

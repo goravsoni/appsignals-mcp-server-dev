@@ -20,6 +20,24 @@ from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
 
 
+def format_severity_summary_line(findings: List[Dict[str, Any]]) -> str:
+    """One-line severity summary for the top of audit output."""
+    if not findings:
+        return '✅ No findings — all targets appear healthy.\n'
+    counts: Dict[str, int] = {}
+    services: set = set()
+    for f in findings:
+        sev = f.get('Severity', 'INFO').upper()
+        counts[sev] = counts.get(sev, 0) + 1
+        # Try multiple keys for service name
+        svc = f.get('ServiceName') or f.get('TargetName') or f.get('Name') or 'unknown'
+        services.add(svc)
+    parts = []
+    for sev in ('CRITICAL', 'WARNING', 'INFO'):
+        if counts.get(sev, 0) > 0:
+            parts.append(f'{counts[sev]} {sev}')
+    return f'⚡ SUMMARY: {", ".join(parts)} findings across {len(services)} target(s)\n'
+
 def extract_findings_summary(audit_result: str) -> Tuple[List[Dict[str, Any]], str]:
     """Extract findings from audit result and return summary with original result.
 
@@ -141,6 +159,21 @@ def format_findings_summary(findings: List[Dict[str, Any]], audit_type: str = 's
     summary += "To investigate any specific issue in detail, please let me know which finding number you'd like me to analyze further.\n"
     summary += 'I can perform comprehensive root cause analysis including traces, logs, metrics, and dependencies.\n\n'
     summary += '**Example:** "Please investigate finding #1 in detail" or "Show me root cause analysis for finding #3"\n'
+
+    # Extract and surface trace IDs from findings for easy chaining into trace tools
+    trace_ids: list = []
+    for finding in findings:
+        # Search finding details for trace IDs
+        finding_str = json.dumps(finding, default=str)
+        import re
+        found_traces = re.findall(r'1-[0-9a-f]{8}-[0-9a-f]{24}', finding_str)
+        trace_ids.extend(found_traces)
+    trace_ids = list(dict.fromkeys(trace_ids))  # deduplicate preserving order
+    if trace_ids:
+        summary += '\n🔍 **Related Trace IDs** (use query_sampled_traces or search_transaction_spans to investigate):\n'
+        for tid in trace_ids[:10]:  # cap at 10
+            summary += f'  • {tid}\n'
+        summary += '\n'
 
     return summary
 

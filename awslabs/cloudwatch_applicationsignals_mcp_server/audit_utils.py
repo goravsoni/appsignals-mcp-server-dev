@@ -232,7 +232,12 @@ async def execute_audit_api(input_obj: Dict[str, Any], region: str, banner: str)
         final_result['ListAuditFindingsErrors'] = error_details
 
     final_observation_text = json.dumps(final_result, indent=2, default=str)
-    return banner + final_observation_text
+
+    # Prepend severity summary line
+    from .audit_presentation_utils import format_severity_summary_line
+    severity_line = format_severity_summary_line(aggregated_findings)
+
+    return banner + severity_line + '\n' + final_observation_text
 
 
 def _create_service_target(
