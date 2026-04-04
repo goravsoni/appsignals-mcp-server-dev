@@ -184,6 +184,8 @@ async def audit_services(
 ) -> str:
     """PRIMARY SERVICE AUDIT TOOL - The #1 tool for comprehensive AWS service health auditing and monitoring.
 
+    **If the user doesn't specify a service name, use wildcard pattern '*' to discover and audit all services automatically.**
+
     **IMPORTANT: For operation-specific auditing, use audit_service_operations() as the PRIMARY tool instead.**
 
     **USE THIS FIRST FOR ALL SERVICE-LEVEL AUDITING TASKS**
@@ -496,6 +498,8 @@ async def audit_slos(
 ) -> str:
     """PRIMARY SLO AUDIT TOOL - The #1 tool for comprehensive SLO compliance monitoring and breach analysis.
 
+    **If the user doesn't specify an SLO name, use wildcard pattern '*' to discover and audit all SLOs automatically.**
+
     **PREFERRED TOOL FOR SLO ROOT CAUSE ANALYSIS**
     This is the RECOMMENDED tool after using get_slo() to understand SLO configuration:
     - **Use auditors="all" for comprehensive root cause analysis** of specific SLO breaches
@@ -750,6 +754,8 @@ async def audit_service_operations(
 ) -> str:
     """🥇 PRIMARY OPERATION AUDIT TOOL - The #1 RECOMMENDED tool for operation-specific analysis and performance investigation.
 
+    **If the user doesn't specify a service name, use wildcard pattern '*' to discover all services and their operations automatically.**
+
     **⭐ USE THIS AS THE PRIMARY TOOL FOR ALL OPERATION-SPECIFIC AUDITING TASKS ⭐**
 
     **PREFERRED OVER audit_services() for operation auditing because:**
@@ -978,7 +984,7 @@ async def audit_service_operations(
 
 
 @mcp.tool()
-async def analyze_canary_failures(canary_name: str, region: str = AWS_REGION) -> str:
+async def analyze_canary_failures(canary_name: str = '', region: str = AWS_REGION) -> str:
     """Comprehensive canary failure analysis with deep dive into issues.
 
     Use this tool to:
@@ -989,7 +995,11 @@ async def analyze_canary_failures(canary_name: str, region: str = AWS_REGION) ->
     - Correlate canary failures with Application Signals telemetry data
     - Identify performance degradation and availability issues across service dependencies
 
+    If canary_name is omitted or empty, automatically discovers all canaries and analyzes any that are failing.
+    This means you do NOT need to ask the user for a canary name — just call this tool and it will find failing canaries.
+
     Key Features:
+    - **Auto-Discovery**: When no canary name is provided, discovers and analyzes all failing canaries automatically
     - **Failure Pattern Analysis**: Identifies recurring failure modes and temporal patterns
     - **Artifact Deep Dive**: Analyzes canary logs, screenshots, and network traces for root causes
     - **Service Correlation**: Links canary failures to upstream/downstream service issues using Application Signals
@@ -1012,7 +1022,8 @@ async def analyze_canary_failures(canary_name: str, region: str = AWS_REGION) ->
     - Historical failure patterns and recovery recommendations
 
     Args:
-        canary_name (str): Name of the CloudWatch Synthetics canary to analyze
+        canary_name (str, optional): Name of the CloudWatch Synthetics canary to analyze.
+            If empty or omitted, automatically discovers all canaries and analyzes failing ones.
         region (str, optional): AWS region where the canary is deployed.
 
     Returns:
@@ -1024,6 +1035,73 @@ async def analyze_canary_failures(canary_name: str, region: str = AWS_REGION) ->
             - Historical pattern analysis and trend insights
     """
     try:
+        # Auto-discover canaries if no name provided
+        if not canary_name or canary_name.strip() == '':
+            logger.info('No canary name provided — auto-discovering canaries')
+            try:
+                all_canaries = []
+                paginator_token = None
+                while True:
+                    kwargs = {'MaxResults': 20}
+                    if paginator_token:
+                        kwargs['NextToken'] = paginator_token
+                    desc_response = synthetics_client.describe_canaries(**kwargs)
+                    all_canaries.extend(desc_response.get('Canaries', []))
+                    paginator_token = desc_response.get('NextToken')
+                    if not paginator_token:
+                        break
+
+                if not all_canaries:
+                    return 'No CloudWatch Synthetics canaries found in this account/region.'
+
+                # Find failing canaries (status is not RUNNING or last run failed)
+                failing_canaries = []
+                healthy_canaries = []
+                for c in all_canaries:
+                    c_name = c.get('Name', 'unknown')
+                    status = c.get('Status', {})
+                    state = status.get('State', 'UNKNOWN')
+                    state_reason = status.get('StateReason', '')
+                    if state in ('ERROR', 'STOPPED') or 'error' in state_reason.lower():
+                        failing_canaries.append(c_name)
+                    else:
+                        # Check last run status
+                        try:
+                            runs_resp = synthetics_client.get_canary_runs(Name=c_name, MaxResults=1)
+                            last_runs = runs_resp.get('CanaryRuns', [])
+                            if last_runs and last_runs[0].get('Status', {}).get('State') == 'FAILED':
+                                failing_canaries.append(c_name)
+                            else:
+                                healthy_canaries.append(c_name)
+                        except Exception:
+                            healthy_canaries.append(c_name)
+
+                if not failing_canaries:
+                    summary = f'All {len(all_canaries)} canaries are healthy.\n\nCanaries checked:\n'
+                    for c_name in sorted(all_canaries, key=lambda x: x.get('Name', '')):
+                        summary += f'  ✅ {c_name.get("Name", "unknown")}\n'
+                    return summary
+
+                # Analyze each failing canary
+                results = [f'Found {len(failing_canaries)} failing canary(ies) out of {len(all_canaries)} total.\n']
+                if healthy_canaries:
+                    results.append(f'Healthy canaries: {", ".join(healthy_canaries)}\n')
+                results.append('')
+
+                for fc_name in failing_canaries:
+                    results.append(f'--- Analyzing failing canary: {fc_name} ---\n')
+                    # Recursively call with the specific canary name
+                    single_result = await analyze_canary_failures(fc_name, region)
+                    results.append(single_result)
+                    results.append('')
+
+                return '\n'.join(results)
+
+            except Exception as e:
+                logger.error(f'Failed to auto-discover canaries: {e}', exc_info=True)
+                return f'Error discovering canaries: {str(e)}. Please provide a specific canary_name.'
+
+        # --- Original logic for specific canary name ---
         # Get recent canary runs
         response = synthetics_client.get_canary_runs(Name=canary_name, MaxResults=5)
         runs = response.get('CanaryRuns', [])

@@ -273,10 +273,18 @@ async def query_service_metrics(
 ) -> str:
     """Get CloudWatch metrics for a specific Application Signals service.
 
+    USE THIS WHEN the user asks about:
+    - Metric timelines, trends, or history: "show me latency over the last 24 hours"
+    - Before/after comparisons: "compare latency before and after the deployment"
+    - Percentile queries: "what's the p99 latency?" / "show me p95 over time"
+    - Specific metric values: "what's the current error rate?"
+    - Performance trending: "is latency getting worse?" / "has the fault rate gone down?"
+
     Use this tool to:
     - Analyze service performance (latency, throughput)
     - Check error rates and reliability
-    - View trends over time
+    - Compare metrics across time ranges (before vs after deployment)
+    - View trends over time (hours, days, up to 1 week)
     - Get both standard statistics (Average, Max) and percentiles (p99, p95)
 
     Common metric names:
