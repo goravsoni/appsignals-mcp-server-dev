@@ -301,6 +301,7 @@ async def search_transaction_spans(
                     'status': status,
                     'statistics': response.get('statistics', {}),
                     'results': results,
+                    'query_used': query_string,
                     'transaction_search_status': {
                         'enabled': True,
                         'destination': 'CloudWatchLogs',

@@ -34,17 +34,8 @@ from .aws_clients import (
     s3_client,
     synthetics_client,
 )
-from .canary_utils import (
-    analyze_canary_logs_with_time_window,
-    analyze_har_file,
-    analyze_iam_role_and_policies,
-    analyze_log_files,
-    analyze_screenshots,
-    check_resource_arns_correct,
-    extract_disk_memory_usage_metrics,
-    get_canary_code,
-    get_canary_metrics_and_service_insights,
-)
+# canary_utils imports are lazy-loaded inside analyze_canary_failures() to avoid
+# loading heavyweight canary analysis modules on every request.
 from .change_tools import list_change_events
 from .enablement_tools import get_enablement_guide
 from .group_tools import (
@@ -1047,6 +1038,19 @@ async def analyze_canary_failures(canary_name: str = '', region: str = AWS_REGIO
             - Historical pattern analysis and trend insights
     """
     try:
+        # Lazy-load canary analysis modules (only needed for this tool)
+        from .canary_utils import (
+            analyze_canary_logs_with_time_window,
+            analyze_har_file,
+            analyze_iam_role_and_policies,
+            analyze_log_files,
+            analyze_screenshots,
+            check_resource_arns_correct,
+            extract_disk_memory_usage_metrics,
+            get_canary_code,
+            get_canary_metrics_and_service_insights,
+        )
+
         # Auto-discover canaries if no name provided
         if not canary_name or canary_name.strip() == '':
             logger.info('No canary name provided — auto-discovering canaries')
