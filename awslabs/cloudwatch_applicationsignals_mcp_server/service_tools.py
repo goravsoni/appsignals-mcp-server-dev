@@ -90,25 +90,73 @@ async def list_monitored_services() -> str:
             logger.warning('No services found in Application Signals')
             return 'No services found in Application Signals.'
 
-        result = f'Application Signals Services ({len(services)} total):\n\n'
-
+        # Separate instrumented vs uninstrumented services
+        instrumented = []
+        uninstrumented = []
         for service in services:
-            # Extract service name from KeyAttributes
-            key_attrs = service.get('KeyAttributes', {})
-            service_name = key_attrs.get('Name', 'Unknown')
-            service_type = key_attrs.get('Type', 'Unknown')
+            attribute_maps = service.get('AttributeMaps', [])
+            is_instrumented = True
+            instrumentation_type = 'INSTRUMENTED'
+            for attr_map in attribute_maps:
+                if isinstance(attr_map, dict) and 'InstrumentationType' in attr_map:
+                    instrumentation_type = attr_map['InstrumentationType']
+                    if instrumentation_type in ('UNINSTRUMENTED', 'AWS_NATIVE'):
+                        is_instrumented = False
+                    break
+            if is_instrumented:
+                instrumented.append(service)
+            else:
+                uninstrumented.append((service, instrumentation_type))
 
-            result += f'• Service: {service_name}\n'
-            result += f'  Type: {service_type}\n'
-            result += f'  Console: {console_url_service(service_name, AWS_REGION)}\n'
-
-            # Add key attributes
-            if key_attrs:
-                result += '  Key Attributes:\n'
-                for key, value in key_attrs.items():
-                    result += f'    {key}: {value}\n'
-
+        # If ALL services are uninstrumented, short-circuit to onboarding guidance
+        if not instrumented and uninstrumented:
+            result = '⚠️ No instrumented services found in Application Signals.\n\n'
+            result += f'Your account has {len(uninstrumented)} discovered (uninstrumented) service(s), '
+            result += 'but none are actively sending telemetry through Application Signals.\n\n'
+            result += 'Discovered services:\n'
+            for svc, inst_type in uninstrumented:
+                key_attrs = svc.get('KeyAttributes', {})
+                svc_name = key_attrs.get('Name', 'Unknown')
+                env = key_attrs.get('Environment', 'Unknown')
+                result += f'  • {svc_name} ({env}) — {inst_type}\n'
             result += '\n'
+            result += '🚀 To start using Application Signals, enable instrumentation on your services.\n'
+            result += 'Use the get_enablement_guide tool with your platform (eks, ecs, ec2, or lambda) '
+            result += 'and language (python, java, nodejs, or dotnet) to get step-by-step instructions.\n\n'
+            result += 'Example: "How do I enable Application Signals for my EKS services?"\n'
+            return result
+
+        # Build result prioritizing instrumented services
+        result = f'Application Signals Services ({len(instrumented)} instrumented'
+        if uninstrumented:
+            result += f', {len(uninstrumented)} uninstrumented'
+        result += '):\n\n'
+
+        if instrumented:
+            result += f'📊 Instrumented Services ({len(instrumented)}):\n\n'
+            for service in instrumented:
+                key_attrs = service.get('KeyAttributes', {})
+                service_name = key_attrs.get('Name', 'Unknown')
+                service_type = key_attrs.get('Type', 'Unknown')
+
+                result += f'• Service: {service_name}\n'
+                result += f'  Type: {service_type}\n'
+                result += f'  Console: {console_url_service(service_name, AWS_REGION)}\n'
+
+                if key_attrs:
+                    result += '  Key Attributes:\n'
+                    for key, value in key_attrs.items():
+                        result += f'    {key}: {value}\n'
+                result += '\n'
+
+        if uninstrumented:
+            result += f'ℹ️ Uninstrumented Services ({len(uninstrumented)}) — discovered but not sending telemetry:\n'
+            for svc, inst_type in uninstrumented:
+                key_attrs = svc.get('KeyAttributes', {})
+                svc_name = key_attrs.get('Name', 'Unknown')
+                env = key_attrs.get('Environment', 'Unknown')
+                result += f'  • {svc_name} ({env}) — {inst_type}\n'
+            result += '\nTo enable instrumentation on these services, use the get_enablement_guide tool.\n\n'
 
         elapsed_time = timer() - start_time_perf
         logger.debug(f'list_monitored_services completed in {elapsed_time:.3f}s')
