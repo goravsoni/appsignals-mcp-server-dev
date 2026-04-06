@@ -657,6 +657,40 @@ async def list_slis(
             logger.warning('No services found in Application Signals')
             return 'No services found in Application Signals.'
 
+        # Filter out uninstrumented services to avoid throttling errors
+        UNINSTRUMENTED_TYPES = {'UNINSTRUMENTED', 'AWS_NATIVE'}
+        instrumented_services = []
+        skipped_count = 0
+        for service in services:
+            attr_maps = service.get('AttributeMaps', [])
+            instrumentation_type = None
+            for attr_map in attr_maps:
+                if 'InstrumentationType' in attr_map:
+                    instrumentation_type = attr_map['InstrumentationType']
+                    break
+            if instrumentation_type in UNINSTRUMENTED_TYPES:
+                skipped_count += 1
+                logger.debug(
+                    f'Skipping uninstrumented service: {service["KeyAttributes"].get("Name", "Unknown")}'
+                )
+            else:
+                instrumented_services.append(service)
+
+        if skipped_count > 0:
+            logger.info(
+                f'Filtered out {skipped_count} uninstrumented services, '
+                f'processing {len(instrumented_services)} instrumented services'
+            )
+
+        if not instrumented_services:
+            return (
+                'No instrumented services found in Application Signals.\n'
+                f'{skipped_count} uninstrumented service(s) were skipped.\n'
+                'Use get_enablement_guide() to enable Application Signals instrumentation.'
+            )
+
+        services = instrumented_services
+
         # Get SLI reports for each service
         reports = []
         logger.debug(f'Generating SLI reports for {len(services)} services')

@@ -14,7 +14,7 @@
 
 """CloudWatch Application Signals MCP Server - Service-related tools."""
 
-from .aws_clients import applicationsignals_client, cloudwatch_client
+from .aws_clients import AWS_REGION, applicationsignals_client, cloudwatch_client
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta, timezone
 from loguru import logger
@@ -89,24 +89,73 @@ async def list_monitored_services() -> str:
             logger.warning('No services found in Application Signals')
             return 'No services found in Application Signals.'
 
-        result = f'Application Signals Services ({len(services)} total):\n\n'
+        # Separate services into instrumented vs uninstrumented
+        instrumented_services = []
+        uninstrumented_services = []
+        UNINSTRUMENTED_TYPES = {'UNINSTRUMENTED', 'AWS_NATIVE'}
 
         for service in services:
-            # Extract service name from KeyAttributes
-            key_attrs = service.get('KeyAttributes', {})
-            service_name = key_attrs.get('Name', 'Unknown')
-            service_type = key_attrs.get('Type', 'Unknown')
+            attr_maps = service.get('AttributeMaps', [])
+            instrumentation_type = None
+            for attr_map in attr_maps:
+                if 'InstrumentationType' in attr_map:
+                    instrumentation_type = attr_map['InstrumentationType']
+                    break
+            if instrumentation_type in UNINSTRUMENTED_TYPES:
+                uninstrumented_services.append(service)
+            else:
+                instrumented_services.append(service)
 
-            result += f'• Service: {service_name}\n'
-            result += f'  Type: {service_type}\n'
+        logger.debug(
+            f'Service classification: {len(instrumented_services)} instrumented, '
+            f'{len(uninstrumented_services)} uninstrumented out of {len(services)} total'
+        )
 
-            # Add key attributes
-            if key_attrs:
-                result += '  Key Attributes:\n'
-                for key, value in key_attrs.items():
-                    result += f'    {key}: {value}\n'
+        # If ALL services are uninstrumented, return onboarding guidance
+        if not instrumented_services:
+            result = (
+                f'⚠️ All {len(services)} services are UNINSTRUMENTED.\n\n'
+                'None of your services have Application Signals instrumentation enabled.\n'
+                'Without instrumentation, you cannot get SLOs, traces, or operation-level metrics.\n\n'
+                '🚀 **Next Step**: Use `get_enablement_guide()` to learn how to enable '
+                'Application Signals instrumentation for your services.\n\n'
+                'Uninstrumented services detected:\n'
+            )
+            for service in uninstrumented_services:
+                key_attrs = service.get('KeyAttributes', {})
+                result += f'  • {key_attrs.get("Name", "Unknown")} ({key_attrs.get("Environment", "Unknown")})\n'
+            return result
 
-            result += '\n'
+        # Build result: instrumented services first with full details
+        result = f'Application Signals Services ({len(services)} total — {len(instrumented_services)} instrumented, {len(uninstrumented_services)} uninstrumented):\n\n'
+
+        if instrumented_services:
+            result += f'✅ Instrumented Services ({len(instrumented_services)}):\n\n'
+            for service in instrumented_services:
+                key_attrs = service.get('KeyAttributes', {})
+                service_name = key_attrs.get('Name', 'Unknown')
+                service_type = key_attrs.get('Type', 'Unknown')
+
+                result += f'• Service: {service_name}\n'
+                result += f'  Type: {service_type}\n'
+
+                if key_attrs:
+                    result += '  Key Attributes:\n'
+                    for key, value in key_attrs.items():
+                        result += f'    {key}: {value}\n'
+
+                result += '\n'
+
+        if uninstrumented_services:
+            result += f'⚠️ Uninstrumented Services ({len(uninstrumented_services)}) — limited observability:\n'
+            for service in uninstrumented_services:
+                key_attrs = service.get('KeyAttributes', {})
+                svc_name = key_attrs.get('Name', 'Unknown')
+                svc_env = key_attrs.get('Environment', 'Unknown')
+                result += f'  • {svc_name} ({svc_env})\n'
+            result += (
+                '\n💡 Use `get_enablement_guide()` to enable instrumentation for these services.\n'
+            )
 
         elapsed_time = timer() - start_time_perf
         logger.debug(f'list_monitored_services completed in {elapsed_time:.3f}s')
