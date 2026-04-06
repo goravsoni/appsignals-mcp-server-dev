@@ -17,6 +17,7 @@
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 
 
 # =============================================================================
@@ -36,6 +37,18 @@ ERROR_THRESHOLD_CRITICAL = 5.0  # Error rate >= 5% triggers CRITICAL
 # Latency thresholds (P99 latency in milliseconds)
 LATENCY_P99_THRESHOLD_WARNING = 1000.0  # P99 >= 1000ms (1s) triggers WARNING
 LATENCY_P99_THRESHOLD_CRITICAL = 5000.0  # P99 >= 5000ms (5s) triggers CRITICAL
+
+
+def console_url_service(service_name: str, region: str) -> str:
+    """Generate a direct AWS Console deep-link for a service in Application Signals."""
+    encoded = quote(service_name, safe='')
+    return f'https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#application-signals:services/{encoded}'
+
+
+def console_url_slo(slo_name: str, region: str) -> str:
+    """Generate a direct AWS Console deep-link for an SLO in Application Signals."""
+    encoded = quote(slo_name, safe='')
+    return f'https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#application-signals:slo?slo={encoded}'
 
 
 def remove_null_values(data: dict) -> dict:

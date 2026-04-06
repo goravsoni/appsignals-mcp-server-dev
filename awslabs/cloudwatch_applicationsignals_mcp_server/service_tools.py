@@ -481,6 +481,35 @@ async def query_service_metrics(
 
         result += f'• Data Points: {len(datapoints)}\n\n'
 
+        # Baseline comparison: compare current period vs previous equivalent period
+        if hours < 24 and standard_values:
+            try:
+                prev_end = start_time
+                prev_start = prev_end - timedelta(hours=hours)
+                prev_response = cloudwatch_client.get_metric_statistics(
+                    Namespace=target_metric['Namespace'],
+                    MetricName=target_metric['MetricName'],
+                    Dimensions=target_metric.get('Dimensions', []),
+                    StartTime=prev_start,
+                    EndTime=prev_end,
+                    Period=period,
+                    Statistics=[statistic],
+                )
+                prev_datapoints = prev_response.get('Datapoints', [])
+                prev_values = [dp.get(statistic) for dp in prev_datapoints if dp.get(statistic) is not None]
+                if prev_values:
+                    current_avg = sum(standard_values) / len(standard_values)
+                    prev_avg = sum(prev_values) / len(prev_values)
+                    if prev_avg != 0:
+                        delta_pct = ((current_avg - prev_avg) / abs(prev_avg)) * 100
+                        direction = '📈' if delta_pct > 0 else '📉' if delta_pct < 0 else '➡️'
+                        result += f'Baseline Comparison (vs previous {hours}h):\n'
+                        result += f'• Current {statistic}: {current_avg:.2f}\n'
+                        result += f'• Previous {statistic}: {prev_avg:.2f}\n'
+                        result += f'• Change: {direction} {delta_pct:+.1f}%\n\n'
+            except Exception as baseline_err:
+                logger.debug(f'Baseline comparison skipped: {baseline_err}')
+
         # Show recent values (last 10) with both metrics
         result += 'Recent Values:\n'
         for dp in datapoints[-10:]:

@@ -15,8 +15,39 @@
 """Utilities for presenting audit findings and managing user interaction."""
 
 import json
+from datetime import datetime, timezone
 from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def format_severity_summary_line(findings: List[Dict[str, Any]]) -> str:
+    """Return a one-line severity summary for audit findings.
+
+    Args:
+        findings: List of audit findings
+
+    Returns:
+        A single summary line string
+    """
+    if not findings:
+        return '✅ No findings — all targets appear healthy.\n'
+
+    counts: Dict[str, int] = {}
+    target_names: set = set()
+    for f in findings:
+        sev = f.get('Severity', 'INFO').upper()
+        counts[sev] = counts.get(sev, 0) + 1
+        target_name = f.get('TargetName', '')
+        if target_name:
+            target_names.add(target_name)
+
+    parts = []
+    for sev in ('CRITICAL', 'WARNING', 'INFO'):
+        if sev in counts:
+            parts.append(f'{counts[sev]} {sev}')
+
+    targets_str = f' across {len(target_names)} targets' if target_names else ''
+    return f'⚡ SUMMARY: {", ".join(parts)} findings{targets_str}\n'
 
 
 def extract_findings_summary(audit_result: str) -> Tuple[List[Dict[str, Any]], str]:
@@ -93,7 +124,27 @@ def format_findings_summary(findings: List[Dict[str, Any]], audit_type: str = 's
             finding_id = finding.get('FindingId', f'finding-{finding_counter}')
             description = finding.get('Description', 'No description available')
             summary += f'**{finding_counter}.** Finding ID: {finding_id}\n'
-            summary += f'   💬 {description}\n\n'
+            onset_str = ''
+            try:
+                ts_val = finding.get('StartTime') or finding.get('Timestamp') or finding.get('CreatedAt')
+                if ts_val is not None:
+                    if isinstance(ts_val, str):
+                        ts_dt = datetime.fromisoformat(ts_val.replace('Z', '+00:00'))
+                    elif isinstance(ts_val, (int, float)):
+                        ts_dt = datetime.fromtimestamp(float(ts_val), tz=timezone.utc)
+                    else:
+                        ts_dt = ts_val if hasattr(ts_val, 'timestamp') else None
+                    if ts_dt is not None:
+                        if ts_dt.tzinfo is None:
+                            ts_dt = ts_dt.replace(tzinfo=timezone.utc)
+                        delta = datetime.now(timezone.utc) - ts_dt
+                        total_minutes = int(delta.total_seconds() / 60)
+                        hours_part = total_minutes // 60
+                        mins_part = total_minutes % 60
+                        onset_str = f' (ongoing for {hours_part}h {mins_part}m)'
+            except Exception:
+                pass
+            summary += f'   💬 {description}{onset_str}\n\n'
             finding_counter += 1
 
     if warning_findings:

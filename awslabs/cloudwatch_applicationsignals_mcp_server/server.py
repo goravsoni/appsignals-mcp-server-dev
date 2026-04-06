@@ -465,7 +465,21 @@ async def audit_services(
 
     except Exception as e:
         logger.error(f'Unexpected error in audit_services: {e}', exc_info=True)
-        return f'Error: {str(e)}'
+        error_msg = str(e)
+        error_msg_lower = error_msg.lower()
+        if 'throttl' in error_msg_lower or 'rate' in error_msg_lower:
+            guidance = 'Rate limited by AWS API. Do NOT retry with the same parameters. Try reducing the number of targets or wait before retrying.'
+        elif 'AccessDenied' in error_msg or 'not authorized' in error_msg_lower:
+            guidance = 'Permission denied. Ensure the IAM role has application-signals:ListAuditFindings permission. Do NOT retry.'
+        elif 'not found' in error_msg_lower or 'ResourceNotFoundException' in error_msg:
+            guidance = 'Target not found. Use list_monitored_services() to verify available targets before retrying.'
+        elif 'validation' in error_msg_lower or 'ValidationException' in error_msg:
+            guidance = 'Invalid parameters. Check that service_targets JSON format is correct and service names match exactly.'
+        elif 'pagination' in error_msg_lower or 'token' in error_msg_lower:
+            guidance = 'Stale pagination token. Start a new query without next_token parameter.'
+        else:
+            guidance = 'Unexpected error. Do NOT retry with identical parameters — try a different approach or narrower scope.'
+        return f'Error: {error_msg}\n⚠️ Guidance: {guidance}'
 
 
 @mcp.tool()
@@ -720,7 +734,21 @@ async def audit_slos(
 
     except Exception as e:
         logger.error(f'Unexpected error in audit_slos: {e}', exc_info=True)
-        return f'Error: {str(e)}'
+        error_msg = str(e)
+        error_msg_lower = error_msg.lower()
+        if 'throttl' in error_msg_lower or 'rate' in error_msg_lower:
+            guidance = 'Rate limited by AWS API. Do NOT retry with the same parameters. Try reducing the number of targets or wait before retrying.'
+        elif 'AccessDenied' in error_msg or 'not authorized' in error_msg_lower:
+            guidance = 'Permission denied. Ensure the IAM role has application-signals:ListAuditFindings permission. Do NOT retry.'
+        elif 'not found' in error_msg_lower or 'ResourceNotFoundException' in error_msg:
+            guidance = 'Target not found. Use list_slos() to verify available SLO names before retrying.'
+        elif 'validation' in error_msg_lower or 'ValidationException' in error_msg:
+            guidance = 'Invalid parameters. Check that slo_targets JSON format is correct and SLO names match exactly.'
+        elif 'pagination' in error_msg_lower or 'token' in error_msg_lower:
+            guidance = 'Stale pagination token. Start a new query without next_token parameter.'
+        else:
+            guidance = 'Unexpected error. Do NOT retry with identical parameters — try a different approach or narrower scope.'
+        return f'Error: {error_msg}\n⚠️ Guidance: {guidance}'
 
 
 @mcp.tool()
@@ -977,7 +1005,21 @@ async def audit_service_operations(
 
     except Exception as e:
         logger.error(f'Unexpected error in audit_service_operations: {e}', exc_info=True)
-        return f'Error: {str(e)}'
+        error_msg = str(e)
+        error_msg_lower = error_msg.lower()
+        if 'throttl' in error_msg_lower or 'rate' in error_msg_lower:
+            guidance = 'Rate limited by AWS API. Do NOT retry with the same parameters. Try reducing the number of targets or wait before retrying.'
+        elif 'AccessDenied' in error_msg or 'not authorized' in error_msg_lower:
+            guidance = 'Permission denied. Ensure the IAM role has application-signals:ListAuditFindings permission. Do NOT retry.'
+        elif 'not found' in error_msg_lower or 'ResourceNotFoundException' in error_msg:
+            guidance = 'Target not found. Use list_monitored_services() to verify available targets before retrying.'
+        elif 'validation' in error_msg_lower or 'ValidationException' in error_msg:
+            guidance = 'Invalid parameters. Check that operation_targets JSON format is correct and names match exactly.'
+        elif 'pagination' in error_msg_lower or 'token' in error_msg_lower:
+            guidance = 'Stale pagination token. Start a new query without next_token parameter.'
+        else:
+            guidance = 'Unexpected error. Do NOT retry with identical parameters — try a different approach or narrower scope.'
+        return f'Error: {error_msg}\n⚠️ Guidance: {guidance}'
 
 
 @mcp.tool()
