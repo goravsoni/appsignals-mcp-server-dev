@@ -343,57 +343,23 @@ async def query_sampled_traces(
         default=None, description='AWS region (defaults to AWS_REGION environment variable)'
     ),
 ) -> str:
-    """SECONDARY TRACE TOOL - Query AWS X-Ray traces (5% sampled data) for trace investigation.
+    """Query AWS X-Ray traces (5% sampled data) for trace investigation and error pattern analysis.
 
-    ⚠️ **IMPORTANT: Consider using audit_slos() with auditors="all" instead for comprehensive root cause analysis**
+    USE THIS WHEN the user asks about:
+    - Finding error traces or fault traces for a service
+    - Failed requests, 5xx errors, or server faults
+    - Exploratory trace analysis or trace filtering
+    - Investigating HTTP status codes (500, 502, 503, etc.)
+    - Getting trace IDs for detailed investigation
+    - Slow requests or high-latency traces
 
-    **RECOMMENDED WORKFLOW FOR OPERATION DISCOVERY:**
-    1. **Use `get_service_detail(service_name)` FIRST** to discover operations from metric dimensions
-    2. **Use audit_slos() with auditors="all"** for comprehensive root cause analysis (PREFERRED)
-    3. Only use this tool if you need specific trace filtering that other tools don't provide
-
-    **RECOMMENDED WORKFLOW FOR SLO BREACH INVESTIGATION:**
-    1. Use get_slo() to understand SLO configuration
-    2. **Use audit_slos() with auditors="all"** for comprehensive root cause analysis (PREFERRED)
-    3. Only use this tool if you need specific trace filtering that audit_slos() doesn't provide
-
-    **WHY audit_slos() IS PREFERRED:**
-    - **Comprehensive analysis**: Combines traces, logs, metrics, and dependencies
-    - **Actionable recommendations**: Provides specific steps to resolve issues
-    - **Integrated findings**: Correlates multiple data sources for better insights
-    - **Much more effective** than individual trace analysis
-
-    **WHY get_service_detail() IS PREFERRED FOR OPERATION DISCOVERY:**
-    - **Direct operation discovery**: Operations are available in metric dimensions
-    - **More reliable**: Uses Application Signals service metadata instead of sampling
-    - **Comprehensive**: Shows all operations, not just those in sampled traces
-
-    ⚠️ **LIMITATIONS OF THIS TOOL:**
-    - Uses X-Ray's **5% sampled trace data** - may miss critical errors
-    - **Limited context** compared to comprehensive audit tools
-    - **No integrated analysis** with logs, metrics, or dependencies
-    - **May miss operations** due to sampling - use get_service_detail() for complete operation discovery
+    LIMITATIONS:
+    - Uses X-Ray's 5% sampled trace data — may miss some errors due to sampling
+    - Maximum time window is 6 hours
     - For 100% trace visibility, enable Transaction Search and use search_transaction_spans()
+    - For integrated root cause analysis combining traces, logs, metrics, and dependencies, use audit_slos() with auditors="all"
 
-    **Use this tool only when:**
-    - You need specific X-Ray filter expressions not available in audit tools
-    - You're doing exploratory trace analysis outside of SLO breach investigation
-    - You need raw trace data for custom analysis
-    - **After using get_service_detail() for operation discovery**
-
-    **For operation discovery, use get_service_detail() instead:**
-    ```
-    get_service_detail(service_name='your-service-name')
-    ```
-
-    **For SLO breach root cause analysis, use audit_slos() instead:**
-    ```
-    audit_slos(
-        slo_targets='[{"Type":"slo","Data":{"Slo":{"SloName":"your-slo-name"}}}]', auditors='all'
-    )
-    ```
-
-    Common filter expressions (if you must use this tool):
+    Common filter expressions:
     - 'service("service-name"){fault = true}': Find all traces with faults (5xx errors) for a service
     - 'service("service-name")': Filter by specific service
     - 'duration > 5': Find slow requests (over 5 seconds)
@@ -410,8 +376,6 @@ async def query_sampled_traces(
     - Service interactions
     - User information if available
     - Exception root causes (ErrorRootCauses, FaultRootCauses, ResponseTimeRootCauses)
-
-    **RECOMMENDATION: Use get_service_detail() for operation discovery and audit_slos() with auditors="all" for comprehensive root cause analysis instead of this tool.**
 
     Returns:
         JSON string containing trace summaries with error status, duration, and service details
