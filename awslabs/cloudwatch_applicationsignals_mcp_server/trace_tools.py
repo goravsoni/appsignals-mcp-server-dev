@@ -610,7 +610,13 @@ async def list_slis(
         description='Number of hours to look back (default 24, typically use 24 for daily checks)',
     ),
 ) -> str:
-    """SPECIALIZED TOOL - Use audit_service_health() as the PRIMARY tool for service auditing.
+    """Get per-SERVICE health status based on SLI data. Returns one status per monitored service (OK, BREACHED, INSUFFICIENT_DATA).
+
+    **IMPORTANT — THIS TOOL RETURNS SERVICE-LEVEL HEALTH, NOT SLO COUNTS:**
+    - This reports health status for each monitored SERVICE (e.g., 85 services)
+    - It does NOT return the number of SLOs or SLI definitions
+    - For SLO counts, SLO compliance, SLO attainment, or error budgets → use audit_slos() or list_slos()
+    - For "how many SLOs do I have?" → use list_slos(), NOT this tool
 
     **IMPORTANT: audit_service_health() is the PRIMARY and PREFERRED tool for all service auditing tasks.**
 

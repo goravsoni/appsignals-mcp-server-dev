@@ -23,7 +23,13 @@ from time import perf_counter as timer
 
 
 async def list_monitored_services() -> str:
-    """OPTIONAL TOOL for service discovery - audit_services() can automatically discover services using wildcard patterns.
+    """List all monitored services (applications/microservices) in Application Signals. Returns service inventory — NOT SLOs or SLIs.
+
+    **CRITICAL DISTINCTION:**
+    - This tool returns monitored services (e.g., 85 services) — applications being observed
+    - For SLO counts or SLO inventory → use list_slos() (e.g., 23 SLOs)
+    - For SLO compliance or breach status → use audit_slos()
+    - Do NOT use this tool to answer "how many SLOs/SLIs do I have?"
 
     **IMPORTANT: For service auditing and operation analysis, use audit_services() as the PRIMARY tool instead.**
 

@@ -182,7 +182,14 @@ async def audit_services(
         description='Optional. Maximum number of services to process per call when using wildcard patterns (default: 5, max: 10). This controls pagination size for service discovery.',
     ),
 ) -> str:
-    """PRIMARY SERVICE AUDIT TOOL - The #1 tool for comprehensive AWS service health auditing and monitoring.
+    """Audit AWS service health, detect issues, and investigate incidents across all monitored services. This is the go-to tool when something is wrong, when the user is paged, or when a broad health check is needed.
+
+    **WHEN TO USE THIS TOOL — ACT FIRST, ASK LATER:**
+    - User says "something is broken" or "I got paged" → call this with wildcard `*` immediately
+    - User asks "is anything unhealthy?" or "how are my services?" → call this, don't ask for clarification
+    - User wants a health check, status report, or morning standup summary → call this
+    - User mentions an incident, outage, or alert → call this as the first step
+    - When no specific service is mentioned, use wildcard pattern `*` to audit ALL services
 
     **IMPORTANT: For operation-specific auditing, use audit_service_operations() as the PRIMARY tool instead.**
 
@@ -494,7 +501,14 @@ async def audit_slos(
         description='Optional. Maximum number of SLOs to process per call when using wildcard patterns (default: 5, max: 10). This controls pagination size for SLO discovery.',
     ),
 ) -> str:
-    """PRIMARY SLO AUDIT TOOL - The #1 tool for comprehensive SLO compliance monitoring and breach analysis.
+    """Audit SLO compliance, detect SLO breaches, and analyze error budgets. Use this tool — NOT audit_services — when the user asks about SLOs, SLIs, error budgets, attainment, or compliance.
+
+    **CRITICAL DISTINCTION — SERVICES vs SLOs vs SLIs:**
+    - **Services** = monitored applications/microservices (use audit_services or list_monitored_services)
+    - **SLIs** = Service Level Indicators, specific metrics measuring service performance
+    - **SLOs** = Service Level Objectives, targets set on SLIs with attainment goals and error budgets
+    - When user asks "how many SLOs/SLIs do I have?" the answer comes from THIS tool, not audit_services
+    - audit_services returns service counts (e.g., 85 services), this tool returns SLO counts (e.g., 23 SLOs)
 
     **PREFERRED TOOL FOR SLO ROOT CAUSE ANALYSIS**
     This is the RECOMMENDED tool after using get_slo() to understand SLO configuration:
@@ -979,22 +993,23 @@ async def audit_service_operations(
 
 @mcp.tool()
 async def analyze_canary_failures(canary_name: str, region: str = AWS_REGION) -> str:
-    """Comprehensive canary failure analysis with deep dive into issues.
+    """Check canary health, analyze canary failures, and diagnose synthetic monitor issues. Use this tool whenever the user asks about canaries, synthetic monitors, or synthetic tests — whether they are healthy, failing, or flapping.
 
-    Use this tool to:
-    - Deep dive into canary failures with root cause identification
-    - Analyze historical patterns and specific incident details
-    - Get comprehensive artifact analysis including logs, screenshots, and HAR files
-    - Receive actionable recommendations based on AWS debugging methodology
-    - Correlate canary failures with Application Signals telemetry data
-    - Identify performance degradation and availability issues across service dependencies
+    **WHEN TO USE THIS TOOL:**
+    - User asks "how are my canaries doing?" → call this
+    - User asks "are my canaries healthy/passing?" → call this
+    - User mentions canary failures, synthetic monitor issues, or flapping tests → call this
+    - User wants to verify canaries are passing → call this
+    - User asks about canary health, canary status, or canary runs → call this
+    - For ANY question involving the words "canary", "canaries", or "synthetic monitor" → call this
 
-    Key Features:
-    - **Failure Pattern Analysis**: Identifies recurring failure modes and temporal patterns
-    - **Artifact Deep Dive**: Analyzes canary logs, screenshots, and network traces for root causes
-    - **Service Correlation**: Links canary failures to upstream/downstream service issues using Application Signals
-    - **Performance Insights**: Detects latency spikes, fault rates, and connection issues
-    - **Actionable Remediation**: Provides specific steps based on AWS operational best practices
+    **KEY CAPABILITIES:**
+    - **Canary health check**: Shows current status, recent runs, pass/fail history
+    - **Failure root cause analysis**: Deep dive into why canaries are failing
+    - **Artifact analysis**: Analyzes logs, screenshots, and HAR files from canary runs
+    - **Service correlation**: Links canary failures to upstream/downstream service issues
+    - **IAM and permission checks**: Identifies IAM role and policy issues causing failures
+    - **Performance insights**: Detects latency spikes, fault rates, and connection issues
 
     Common Use Cases:
     1. **Incident Response**: Rapid diagnosis of canary failures during outages

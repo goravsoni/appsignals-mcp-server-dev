@@ -369,14 +369,15 @@ async def audit_group_health(
         description='Latency P99 threshold in milliseconds for CRITICAL when using metrics fallback (default: 5000.0)',
     ),
 ) -> str:
-    """HEALTH AUDIT TOOL - Detect anomalies and unhealthy services in a group.
+    """Check the health of all services in a group — detect anomalies, SLO breaches, and unhealthy services. Use this for group-level health checks and service group status.
 
     Use this tool when users ask:
-    - "Is the Payment application healthy?"
-    - "Are there any unhealthy services in Topology?"
-    - "Which services have high fault rates in the checkout group?"
-    - "Check the health of the API group"
+    - "Is my service group healthy?"
+    - "Are there any unhealthy services in my group?"
+    - "Run a health check on my service group"
+    - "Check the health of the Payment application"
     - "Any anomalies in the Payment services?"
+    - "Which services have high fault rates in the checkout group?"
 
     **WHAT THIS TOOL DOES:**
     1. **SLI-First**: First checks Service Level Indicators (SLOs) for each service.
@@ -775,13 +776,16 @@ async def get_group_dependencies(
         description="End time (unix seconds or 'YYYY-MM-DD HH:MM:SS'). Defaults to now UTC.",
     ),
 ) -> str:
-    """DEPENDENCY MAPPING TOOL - Analyze dependencies within and across groups.
+    """Map service dependencies, topology, and call graphs within and across groups. Shows what calls what, upstream/downstream relationships, and external AWS service dependencies.
 
-    Use this tool when users ask:
-    - "What are the dependencies of the Payment group?"
-    - "What does the checkout application depend on?"
-    - "What external services does the Checkout group use?"
-    - "Show me the dependency map for the API group"
+    Use this tool when users ask about:
+    - "What are the dependencies?" / "What calls what?"
+    - "Show me the topology" / "Show me the service map"
+    - "What are the upstream/downstream dependencies?"
+    - "What external services does my group depend on?"
+    - "Map out the call graph between my services"
+    - "Which external dependencies failed during the outage?"
+    - Any question about service relationships, dependency maps, or service topology
 
     **WHAT THIS TOOL DOES:**
     Maps all dependencies for services in a group:

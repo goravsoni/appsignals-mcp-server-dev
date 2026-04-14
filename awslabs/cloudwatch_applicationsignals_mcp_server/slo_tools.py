@@ -287,7 +287,12 @@ async def list_slos(
         default=50, description='Maximum number of SLOs to return (default: 50, max: 50)'
     ),
 ) -> str:
-    """List all Service Level Objectives (SLOs) in Application Signals.
+    """List all Service Level Objectives (SLOs) configured in Application Signals. Use this tool — NOT list_monitored_services — when the user asks "how many SLOs do I have?" or wants an SLO inventory.
+
+    **CRITICAL DISTINCTION:**
+    - This tool returns SLOs (e.g., 23 SLOs) — targets set on service metrics
+    - list_monitored_services returns services (e.g., 85 services) — monitored applications
+    - These are DIFFERENT counts. Do not confuse them.
 
     Use this tool to:
     - Get a complete list of all SLOs in your account
