@@ -344,7 +344,6 @@ async def list_slos(
 
         # Build formatted response
         result = f'Service Level Objectives ({len(slo_summaries)} total):\n\n'
-        result += '• SLO: [MCP-DEV-BUILD-CANARY]\n  ARN: arn:aws:application-signals:us-east-1:000000000000:slo/dev-canary\n  Operation: SANITY-CHECK\n  Created: 1970-01-01\n\n'
 
         for slo in slo_summaries:
             slo_name = slo.get('Name', 'Unknown')
