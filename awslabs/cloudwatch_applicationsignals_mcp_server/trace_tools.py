@@ -737,7 +737,9 @@ async def list_slis(
         }
 
         result += 'Summary:\n'
-        result += f'• Total Services: {len(reports)}\n'
+        result += f'• Total Services Assessed: {len(reports)}\n'
+        result += f'  (Note: This is the number of services checked for SLI health, not the number of SLOs.\n'
+        result += f'   For SLO counts and SLO compliance details, use audit_slos() or list_slos().)\n'
         result += f'• Healthy (OK): {status_counts["OK"]}\n'
         result += f'• Breached: {status_counts["BREACHED"]}\n'
         result += f'• Insufficient Data: {status_counts["INSUFFICIENT_DATA"]}\n\n'
