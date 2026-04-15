@@ -527,6 +527,7 @@ async def audit_group_health(
                                 start_dt,
                                 end_dt,
                                 period,
+                                is_ratio_metric=True,
                             )
                             if stats:
                                 avg_fault = stats['average']
@@ -567,6 +568,7 @@ async def audit_group_health(
                                 start_dt,
                                 end_dt,
                                 period,
+                                is_ratio_metric=True,
                             )
                             if stats:
                                 avg_error = stats['average']

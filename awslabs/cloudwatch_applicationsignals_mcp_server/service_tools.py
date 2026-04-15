@@ -359,6 +359,13 @@ async def query_service_metrics(
             available = [m.get('MetricName', 'Unknown') for m in metric_refs]
             return f"Metric '{metric_name}' not found for service '{service_name}'. Available: {', '.join(available)}"
 
+        # Determine if this metric is a ratio (0-1) that needs conversion to percentage
+        # CloudWatch Application Signals returns Fault and Error metrics as ratios (0.0-1.0)
+        metric_type = target_metric.get('MetricType', '')
+        is_ratio_metric = metric_type in ('Fault', 'Error')
+        ratio_multiplier = 100.0 if is_ratio_metric else 1.0
+        unit_suffix = '%' if is_ratio_metric else ''
+
         # Calculate appropriate period based on time range
         if hours <= 3:
             period = 60  # 1 minute
@@ -412,10 +419,10 @@ async def query_service_metrics(
             min_standard = min(standard_values)  # type: ignore
 
             result += f'{statistic} Statistics:\n'
-            result += f'• Latest: {latest_standard:.2f}\n'
-            result += f'• Average: {avg_of_standard:.2f}\n'
-            result += f'• Maximum: {max_standard:.2f}\n'
-            result += f'• Minimum: {min_standard:.2f}\n\n'
+            result += f'• Latest: {latest_standard * ratio_multiplier:.2f}{unit_suffix}\n'
+            result += f'• Average: {avg_of_standard * ratio_multiplier:.2f}{unit_suffix}\n'
+            result += f'• Maximum: {max_standard * ratio_multiplier:.2f}{unit_suffix}\n'
+            result += f'• Minimum: {min_standard * ratio_multiplier:.2f}{unit_suffix}\n\n'
 
         if extended_values:
             latest_extended = datapoints[-1].get(extended_statistic)
@@ -424,10 +431,10 @@ async def query_service_metrics(
             min_extended = min(extended_values)  # type: ignore
 
             result += f'{extended_statistic} Statistics:\n'
-            result += f'• Latest: {latest_extended:.2f}\n'
-            result += f'• Average: {avg_extended:.2f}\n'
-            result += f'• Maximum: {max_extended:.2f}\n'
-            result += f'• Minimum: {min_extended:.2f}\n\n'
+            result += f'• Latest: {latest_extended * ratio_multiplier:.2f}{unit_suffix}\n'
+            result += f'• Average: {avg_extended * ratio_multiplier:.2f}{unit_suffix}\n'
+            result += f'• Maximum: {max_extended * ratio_multiplier:.2f}{unit_suffix}\n'
+            result += f'• Minimum: {min_extended * ratio_multiplier:.2f}{unit_suffix}\n\n'
 
         result += f'• Data Points: {len(datapoints)}\n\n'
 
@@ -439,9 +446,9 @@ async def query_service_metrics(
 
             values_str = []
             if dp.get(statistic) is not None:
-                values_str.append(f'{statistic}: {dp[statistic]:.2f}')
+                values_str.append(f'{statistic}: {dp[statistic] * ratio_multiplier:.2f}{unit_suffix}')
             if dp.get(extended_statistic) is not None:
-                values_str.append(f'{extended_statistic}: {dp[extended_statistic]:.2f}')
+                values_str.append(f'{extended_statistic}: {dp[extended_statistic] * ratio_multiplier:.2f}{unit_suffix}')
 
             result += f'• {timestamp}: {", ".join(values_str)} {unit}\n'
 

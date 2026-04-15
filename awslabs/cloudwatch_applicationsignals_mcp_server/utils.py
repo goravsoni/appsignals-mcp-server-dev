@@ -230,6 +230,7 @@ def fetch_metric_stats(
     end_dt: datetime,
     period: int,
     extended_statistics: Optional[List[str]] = None,
+    is_ratio_metric: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Fetch CloudWatch metric statistics.
 
@@ -242,9 +243,12 @@ def fetch_metric_stats(
         end_dt: End datetime
         period: Period in seconds
         extended_statistics: Optional list of extended statistics (e.g., ['p99'])
+        is_ratio_metric: If True, multiply values by 100 to convert 0-1 ratios to percentages.
+            CloudWatch Application Signals returns Fault and Error metrics as ratios (0.0-1.0).
 
     Returns:
-        Dict with 'average' and optional 'extended' keys, or None if no data
+        Dict with 'average' and optional 'extended' keys, or None if no data.
+        Values are in percentage form (0-100) when is_ratio_metric=True.
     """
     try:
         params = {
@@ -263,7 +267,8 @@ def fetch_metric_stats(
         if not datapoints:
             logger.debug(f'No datapoints found for {namespace}/{metric_name}')
             return None
-        result = {'average': sum(dp.get('Average', 0) for dp in datapoints) / len(datapoints)}
+        multiplier = 100.0 if is_ratio_metric else 1.0
+        result = {'average': sum(dp.get('Average', 0) for dp in datapoints) / len(datapoints) * multiplier}
         if extended_statistics:
             result['extended'] = datapoints
         return result
