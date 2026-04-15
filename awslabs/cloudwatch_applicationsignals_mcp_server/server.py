@@ -1095,7 +1095,7 @@ async def analyze_canary_failures(canary_name: str = '', region: str = AWS_REGIO
             if not all_canaries:
                 return 'No canaries found in this account/region. Create a canary first using CloudWatch Synthetics.'
 
-            # Check each canary's last run status
+            # Check each canary's last run status — lightweight check only
             failing_canaries = []
             healthy_canaries = []
             for c in all_canaries:
@@ -1104,14 +1104,15 @@ async def analyze_canary_failures(canary_name: str = '', region: str = AWS_REGIO
                 state = last_run.get('State', 'UNKNOWN')
                 state_reason = last_run.get('StateReason', '')
                 if state in ('ERROR', 'STOPPED') or 'error' in state_reason.lower():
-                    failing_canaries.append(c_name)
+                    failing_canaries.append({'name': c_name, 'state': state, 'reason': state_reason})
                 else:
                     # Also check last run via get_canary_runs
                     try:
                         runs_resp = synthetics_client.get_canary_runs(Name=c_name, MaxResults=1)
                         last_runs = runs_resp.get('CanaryRuns', [])
                         if last_runs and last_runs[0].get('Status', {}).get('State') == 'FAILED':
-                            failing_canaries.append(c_name)
+                            fail_reason = last_runs[0].get('Status', {}).get('StateReason', '')
+                            failing_canaries.append({'name': c_name, 'state': 'FAILED', 'reason': fail_reason})
                         else:
                             healthy_canaries.append(c_name)
                     except Exception:
@@ -1124,18 +1125,24 @@ async def analyze_canary_failures(canary_name: str = '', region: str = AWS_REGIO
                     result += f'  • {name} — PASSING\n'
                 return result
 
-            # Analyze each failing canary
-            result = f'🔍 Auto-Discovery: Found {len(failing_canaries)} failing canary(ies) out of {len(all_canaries)} total.\n\n'
-            if healthy_canaries:
-                result += f'✅ Healthy canaries ({len(healthy_canaries)}): {", ".join(healthy_canaries)}\n\n'
+            # Return a lightweight summary — do NOT recursively deep-analyze each canary
+            # (recursive analysis causes Lambda timeout / MCP connection drop with many canaries)
+            result = f'Canary Health Summary: {len(failing_canaries)} failing out of {len(all_canaries)} total.\n\n'
 
-            for fc_name in failing_canaries:
-                result += f'{"=" * 60}\n'
-                result += f'Analyzing failing canary: {fc_name}\n'
-                result += f'{"=" * 60}\n'
-                # Recursively call with the specific canary name
-                single_result = await analyze_canary_failures(canary_name=fc_name, region=region)
-                result += single_result + '\n\n'
+            if healthy_canaries:
+                result += f'Healthy canaries ({len(healthy_canaries)}):\n'
+                for name in healthy_canaries:
+                    result += f'  • {name} — PASSING\n'
+                result += '\n'
+
+            result += f'Failing canaries ({len(failing_canaries)}):\n'
+            for fc in failing_canaries:
+                result += f'  • {fc["name"]} — {fc["state"]}'
+                if fc['reason']:
+                    result += f' — {fc["reason"][:150]}'
+                result += '\n'
+
+            result += '\nTo investigate a specific canary, call analyze_canary_failures(canary_name="<name>") with one of the failing canary names above.\n'
 
             return result
 
