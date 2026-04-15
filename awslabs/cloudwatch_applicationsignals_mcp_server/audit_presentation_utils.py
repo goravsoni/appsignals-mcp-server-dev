@@ -19,6 +19,119 @@ from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
 
 
+def format_structured_audit_output(
+    findings: List[Dict[str, Any]],
+    banner: str,
+    raw_json: str,
+    audit_type: str = 'service',
+) -> str:
+    """Format audit findings into structured markdown that the LLM can directly use.
+
+    This produces Pulsar-style output: executive summary, tables, root causes,
+    and recommended actions — so the LLM doesn't have to parse raw JSON.
+
+    Args:
+        findings: List of AuditFindings from the API response
+        banner: The banner/header text for the audit
+        raw_json: The raw JSON response (appended at the end for completeness)
+        audit_type: Type of audit ("service", "slo", "operation")
+
+    Returns:
+        Structured markdown string with findings summary + raw data
+    """
+    if not findings:
+        return banner + 'No findings. All audited targets appear healthy.\n'
+
+    # Group findings by severity
+    critical = []
+    warning = []
+    info = []
+    for f in findings:
+        sev = (f.get('Severity') or 'INFO').upper()
+        if sev == 'CRITICAL':
+            critical.append(f)
+        elif sev == 'WARNING':
+            warning.append(f)
+        else:
+            info.append(f)
+
+    # --- Executive Summary ---
+    total = len(findings)
+    parts = []
+    if critical:
+        parts.append(f'{len(critical)} critical')
+    if warning:
+        parts.append(f'{len(warning)} warning')
+    if info:
+        parts.append(f'{len(info)} informational')
+
+    summary = (
+        f'FINDINGS SUMMARY: {total} total findings ({", ".join(parts)}) '
+        f'across {audit_type} audit.\n\n'
+    )
+
+    # --- Findings Table ---
+    summary += '| # | Severity | Target | Finding | Description |\n'
+    summary += '|---|----------|--------|---------|-------------|\n'
+
+    ordered = critical + warning + info
+    for i, f in enumerate(ordered, 1):
+        sev = (f.get('Severity') or 'INFO').upper()
+        target = f.get('TargetName', 'Unknown')
+        finding_type = f.get('FindingType', '')
+        title = f.get('Title', 'No title')
+        desc = f.get('Description', '')
+        # Truncate long descriptions for the table
+        short_desc = (desc[:120] + '...') if len(desc) > 120 else desc
+        # Escape pipes in markdown table cells
+        short_desc = short_desc.replace('|', '\\|').replace('\n', ' ')
+        title = title.replace('|', '\\|').replace('\n', ' ')
+        summary += f'| {i} | {sev} | {target} | {title} | {short_desc} |\n'
+
+    summary += '\n'
+
+    # --- Critical Findings Detail ---
+    if critical:
+        summary += 'CRITICAL FINDINGS DETAIL:\n\n'
+        for i, f in enumerate(critical, 1):
+            target = f.get('TargetName', 'Unknown')
+            title = f.get('Title', 'No title')
+            desc = f.get('Description', 'No description')
+            finding_id = f.get('FindingId', '')
+            summary += f'{i}. [{target}] {title}\n'
+            summary += f'   {desc}\n'
+            if finding_id:
+                summary += f'   FindingId: {finding_id}\n'
+
+            # Extract evidence if available
+            evidence = f.get('Evidence', {})
+            if evidence:
+                if isinstance(evidence, dict):
+                    for key, val in evidence.items():
+                        if val:
+                            val_str = str(val)
+                            if len(val_str) > 200:
+                                val_str = val_str[:200] + '...'
+                            summary += f'   Evidence ({key}): {val_str}\n'
+            summary += '\n'
+
+    # --- Warning Findings Detail ---
+    if warning:
+        summary += 'WARNING FINDINGS:\n\n'
+        for i, f in enumerate(warning, 1):
+            target = f.get('TargetName', 'Unknown')
+            title = f.get('Title', 'No title')
+            desc = f.get('Description', 'No description')
+            summary += f'{i}. [{target}] {title}: {desc}\n'
+        summary += '\n'
+
+    # Append raw JSON for completeness (LLM can reference specific details)
+    summary += '---\nRAW AUDIT DATA (for detailed reference):\n'
+    summary += raw_json
+
+    return banner + summary
+
+
 def extract_findings_summary(audit_result: str) -> Tuple[List[Dict[str, Any]], str]:
     """Extract findings from audit result and return summary with original result.
 
