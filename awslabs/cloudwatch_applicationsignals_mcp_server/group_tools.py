@@ -20,7 +20,7 @@ assess and analyze services at the group (application) level.
 Tools:
 - list_group_services: Discover services belonging to a group
 - audit_group_health: Detect anomalies and health issues in a group
-- get_group_dependencies: Map dependencies within and across groups
+- get_dependency_topology: Map dependencies within and across groups
 - get_group_changes: Track deployments across a group
 - list_grouping_attribute_definitions: List all custom grouping attribute definitions
 """
@@ -745,7 +745,7 @@ async def audit_group_health(
             result += '**Next Steps:**\n'
             result += '   • Use audit_services() for detailed root cause analysis\n'
             result += '   • Use get_group_changes() to check for recent deployments\n'
-            result += '   • Use get_group_dependencies() to check downstream impact\n'
+            result += '   • Use get_dependency_topology() to check downstream impact\n'
 
         elapsed = timer() - start_time_perf
         logger.debug(f'audit_group_health completed in {elapsed:.3f}s')
@@ -762,7 +762,7 @@ async def audit_group_health(
 # =============================================================================
 
 
-async def get_group_dependencies(
+async def get_dependency_topology(
     group_name: str = Field(
         ...,
         description="REQUIRED. The group name or value to analyze. Supports wildcards like '*payment*'.",
@@ -800,12 +800,12 @@ async def get_group_dependencies(
 
     **EXAMPLES:**
     ```
-    get_group_dependencies(group_name='Payments')
-    get_group_dependencies(group_name='*api*')
+    get_dependency_topology(group_name='Payments')
+    get_dependency_topology(group_name='*api*')
     ```
     """
     start_time_perf = timer()
-    logger.debug(f'Starting get_group_dependencies for group: {group_name}')
+    logger.debug(f'Starting get_dependency_topology for group: {group_name}')
 
     try:
         group_services, start_dt, end_dt, result, _ = await _setup_group_tool(
@@ -966,12 +966,12 @@ async def get_group_dependencies(
         result += f'   • External AWS dependencies: {len(external_deps)}\n'
 
         elapsed = timer() - start_time_perf
-        logger.debug(f'get_group_dependencies completed in {elapsed:.3f}s')
+        logger.debug(f'get_dependency_topology completed in {elapsed:.3f}s')
 
         return result
 
     except Exception as e:
-        logger.error(f'Unexpected error in get_group_dependencies: {e}', exc_info=True)
+        logger.error(f'Unexpected error in get_dependency_topology: {e}', exc_info=True)
         return f'Error: {str(e)}'
 
 

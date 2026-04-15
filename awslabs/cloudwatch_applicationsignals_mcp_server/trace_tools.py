@@ -736,13 +736,24 @@ async def list_slis(
             'INSUFFICIENT_DATA': sum(1 for r in reports if r['SliStatus'] == 'INSUFFICIENT_DATA'),
         }
 
-        result += 'Summary:\n'
-        result += f'• Total Services Assessed: {len(reports)}\n'
-        result += f'  (Note: This is the number of services checked for SLI health, not the number of SLOs.\n'
-        result += f'   For SLO counts and SLO compliance details, use audit_slos() or list_slos().)\n'
-        result += f'• Healthy (OK): {status_counts["OK"]}\n'
-        result += f'• Breached: {status_counts["BREACHED"]}\n'
-        result += f'• Insufficient Data: {status_counts["INSUFFICIENT_DATA"]}\n\n'
+        # Count total SLOs across all services
+        total_slos = sum(r.get('TotalSloCount', 0) for r in reports)
+        breached_slos = sum(r.get('BreachedSloCount', 0) for r in reports)
+        ok_slos = total_slos - breached_slos
+
+        result += 'SLO Summary:\n'
+        result += f'• Total SLOs: {total_slos}\n'
+        result += f'• Healthy SLOs: {ok_slos}\n'
+        result += f'• Breached SLOs: {breached_slos}\n'
+        if total_slos > 0:
+            healthy_pct = (ok_slos / total_slos) * 100
+            result += f'• Health Rate: {healthy_pct:.1f}%\n'
+        result += '\n'
+
+        result += f'Service Breakdown ({len(reports)} services assessed):\n'
+        result += f'• Services with all SLOs healthy: {status_counts["OK"]}\n'
+        result += f'• Services with breached SLOs: {status_counts["BREACHED"]}\n'
+        result += f'• Services with insufficient data: {status_counts["INSUFFICIENT_DATA"]}\n\n'
 
         # Group by status
         if status_counts['BREACHED'] > 0:

@@ -50,7 +50,7 @@ from .enablement_tools import get_enablement_guide
 from .group_tools import (
     audit_group_health,
     get_group_changes,
-    get_group_dependencies,
+    get_dependency_topology,
     list_group_services,
     list_grouping_attribute_definitions,
 )
@@ -104,7 +104,7 @@ Write for a senior engineer who needs facts, not filler. Prioritize information 
 - When asked about SLOs/SLIs, use audit_slos or list_slos. Do not report service counts as SLO counts.
 - When something is broken or the user is paged, act immediately with audit_services using wildcard '*'. Do not ask for clarification.
 - For canary/synthetic monitor questions, use analyze_canary_failures.
-- For dependency/topology questions, use get_group_dependencies.
+- For dependency/topology questions, use get_dependency_topology.
 """,
 )
 
@@ -1603,7 +1603,7 @@ mcp.tool()(get_enablement_guide)
 mcp.tool()(list_change_events)
 mcp.tool()(list_group_services)
 mcp.tool()(audit_group_health)
-mcp.tool()(get_group_dependencies)
+mcp.tool()(get_dependency_topology)
 mcp.tool()(get_group_changes)
 mcp.tool()(list_grouping_attribute_definitions)
 
