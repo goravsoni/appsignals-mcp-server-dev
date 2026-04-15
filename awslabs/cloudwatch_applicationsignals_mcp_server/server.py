@@ -462,8 +462,7 @@ async def audit_services(
 
         # Create banner
         banner = (
-            RESPONSE_GUIDELINES
-            + '[MCP-SERVICE] Application Signals Service Audit\n'
+            '[MCP-SERVICE] Application Signals Service Audit\n'
             f'🎯 Scope: {len(normalized_targets)} service target(s) | Region: {region}\n'
             f'⏰ Time: {unix_start}–{unix_end}\n'
         )
@@ -728,8 +727,7 @@ async def audit_slos(
         auditors_list = parse_auditors(auditors, ['slo'])  # Default to SLO auditor
 
         banner = (
-            RESPONSE_GUIDELINES
-            + '[MCP-SLO] Application Signals SLO Compliance Audit\n'
+            '[MCP-SLO] Application Signals SLO Compliance Audit\n'
             f'🎯 Scope: {len(slo_only_targets)} SLO target(s) | Region: {region}\n'
             f'⏰ Time: {unix_start}–{unix_end}\n'
         )
@@ -981,8 +979,7 @@ async def audit_service_operations(
         )  # Default to operation_metric auditor
 
         banner = (
-            RESPONSE_GUIDELINES
-            + '[MCP-OPERATION] Application Signals Operation Performance Audit\n'
+            '[MCP-OPERATION] Application Signals Operation Performance Audit\n'
             f'🎯 Scope: {len(operation_only_targets)} operation target(s) | Region: {region}\n'
             f'⏰ Time: {unix_start}–{unix_end}\n'
         )
@@ -1607,23 +1604,48 @@ async def analyze_canary_failures(canary_name: str = '', region: str = AWS_REGIO
         return f'❌ Error in comprehensive failure analysis: {str(e)}'
 
 
-# Register all imported tools with the MCP server
-mcp.tool()(list_monitored_services)
-mcp.tool()(get_service_detail)
-mcp.tool()(query_service_metrics)
-mcp.tool()(list_service_operations)
-mcp.tool()(get_slo)
-mcp.tool()(list_slos)
-mcp.tool()(search_transaction_spans)
-mcp.tool()(query_sampled_traces)
-mcp.tool()(list_slis)
-mcp.tool()(get_enablement_guide)
-mcp.tool()(list_change_events)
-mcp.tool()(list_group_services)
-mcp.tool()(audit_group_health)
-mcp.tool()(get_dependency_topology)
-mcp.tool()(get_group_changes)
-mcp.tool()(list_grouping_attribute_definitions)
+# Wrapper to prepend RESPONSE_GUIDELINES to all tool outputs
+import functools
+import inspect
+
+
+def _with_response_guidelines(func):
+    """Wrap a tool function to prepend RESPONSE_GUIDELINES to its string output."""
+
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        result = await func(*args, **kwargs)
+        if isinstance(result, str):
+            return RESPONSE_GUIDELINES + result
+        return result
+
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        if isinstance(result, str):
+            return RESPONSE_GUIDELINES + result
+        return result
+
+    return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
+
+
+# Register all imported tools with the MCP server, wrapped with response guidelines
+mcp.tool()(_with_response_guidelines(list_monitored_services))
+mcp.tool()(_with_response_guidelines(get_service_detail))
+mcp.tool()(_with_response_guidelines(query_service_metrics))
+mcp.tool()(_with_response_guidelines(list_service_operations))
+mcp.tool()(_with_response_guidelines(get_slo))
+mcp.tool()(_with_response_guidelines(list_slos))
+mcp.tool()(_with_response_guidelines(search_transaction_spans))
+mcp.tool()(_with_response_guidelines(query_sampled_traces))
+mcp.tool()(_with_response_guidelines(list_slis))
+mcp.tool()(_with_response_guidelines(get_enablement_guide))
+mcp.tool()(_with_response_guidelines(list_change_events))
+mcp.tool()(_with_response_guidelines(list_group_services))
+mcp.tool()(_with_response_guidelines(audit_group_health))
+mcp.tool()(_with_response_guidelines(get_dependency_topology))
+mcp.tool()(_with_response_guidelines(get_group_changes))
+mcp.tool()(_with_response_guidelines(list_grouping_attribute_definitions))
 
 
 def main():
