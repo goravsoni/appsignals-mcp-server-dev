@@ -29,7 +29,9 @@ FUZZY_MATCH_THRESHOLD = 30  # Minimum similarity score for fuzzy matching
 HIGH_CONFIDENCE_MATCH_THRESHOLD = 85  # High confidence threshold for exact fuzzy matches
 
 
-async def execute_audit_api(input_obj: Dict[str, Any], region: str, banner: str) -> str:
+async def execute_audit_api(
+    input_obj: Dict[str, Any], region: str, banner: str, audit_type: str = 'service'
+) -> str:
     """Execute the Application Signals audit API call with the given input object."""
     from .aws_clients import applicationsignals_client
 
@@ -215,7 +217,18 @@ async def execute_audit_api(input_obj: Dict[str, Any], region: str, banner: str)
         final_result['ListAuditFindingsErrors'] = error_details
 
     final_observation_text = json.dumps(final_result, indent=2, default=str)
-    return banner + final_observation_text
+
+    # Post-process findings into structured markdown for better LLM consumption
+    from .audit_presentation_utils import format_structured_audit_output
+
+    if aggregated_findings:
+        result = format_structured_audit_output(
+            aggregated_findings, banner, final_observation_text, audit_type=audit_type
+        )
+    else:
+        result = banner + final_observation_text
+
+    return result
 
 
 def _create_service_target(

@@ -79,10 +79,20 @@ RUN_STATES = {'RUNNING': 'RUNNING', 'PASSED': 'PASSED', 'FAILED': 'FAILED'}
 
 # Response guidelines prepended to audit tool output so the LLM follows them when generating answers.
 RESPONSE_GUIDELINES = (
-    '[RESPONSE RULES: Never fabricate data. If no results found, state what you tried. '
-    'Lead with the finding. Every claim must cite specific data. No speculation. '
-    'Be concise — prefer tables for structured data. No emojis in findings. '
-    'Cite sources: which service, metric, time range, value.]\n\n'
+    '[RESPONSE FORMAT RULES]\n'
+    '1. NEVER fabricate data. If no results found, state what you tried.\n'
+    '2. Lead with a 1-2 sentence executive summary of the situation.\n'
+    '3. Use markdown tables for service health, SLO status, and metrics.\n'
+    '4. Structure your response in this order:\n'
+    '   - Executive Summary (what is happening, how severe)\n'
+    '   - Health/SLO Table (service | latency | fault rate | status)\n'
+    '   - Root Causes Identified (numbered, with specific evidence: trace IDs, error messages, timestamps)\n'
+    '   - Recommended Actions (priority-ordered, actionable)\n'
+    '   - References (which tools/data sources were used)\n'
+    '5. Every claim must cite specific data from the findings below. No speculation.\n'
+    '6. Cite sources: service name, metric name, time range, exact value.\n'
+    '7. When multiple findings exist, present ALL of them — do not cherry-pick.\n'
+    '[END RESPONSE FORMAT RULES]\n\n'
 )
 
 # Initialize FastMCP server
@@ -99,20 +109,30 @@ When you cannot find data:
 NEVER: "The value is probably around 50%"
 ALWAYS: "No results found. Can you verify the parameter?"
 
-## Final Output
-Write for a senior engineer who needs facts, not filler. Prioritize information density and grounded insights.
-- Lead with the answer. State the finding in your first sentence.
-- Support with evidence. Every claim references specific data. No speculation, no hedging.
-- Be concise. One sentence findings stay one sentence. Prefer tables over lists for structured data. No emojis.
-- Adapt structure to the task. Don't force every response into the same template.
-- Reference your sources. Cite what data informed each finding.
+## Response Structure (Follow This Order)
+Every response MUST follow this structure:
+1. **Executive Summary**: 1-2 sentences stating the headline finding. Lead with severity.
+2. **Health Table**: Markdown table with columns: Service | Latency (avg) | Fault Rate | Status
+3. **SLO Table** (if applicable): SLO Name | Attainment | Trend | Status
+4. **Root Causes Identified**: Numbered list with specific evidence (trace IDs, error messages, timestamps, metric values)
+5. **Alarms Context** (if applicable): Distinguish new/actionable alarms from long-standing noise
+6. **Recommended Actions**: Priority-ordered, actionable steps
+7. **References**: List the tools/data sources used
 
-## Key Concepts
+## Behavioral Rules
+- When something is broken or the user is paged, act IMMEDIATELY with audit_services using wildcard '*'. Do NOT ask for clarification.
+- When asked "is anything unhealthy?" — call audit_services with wildcard '*', do NOT ask what services to check.
+- When asked about SLOs/SLIs, use audit_slos or list_slos. Do NOT report service counts as SLO counts.
 - Services (monitored applications) are NOT the same as SLOs (targets on metrics) or SLIs (metric indicators).
-- When asked about SLOs/SLIs, use audit_slos or list_slos. Do not report service counts as SLO counts.
-- When something is broken or the user is paged, act immediately with audit_services using wildcard '*'. Do not ask for clarification.
 - For canary/synthetic monitor questions, use analyze_canary_failures.
 - For dependency/topology questions, use get_dependency_topology.
+- Always correlate findings with recent changes when investigating incidents (use list_change_events).
+
+## Output Quality
+- Write for a senior on-call engineer who needs facts, not filler.
+- Every claim references specific data. No speculation, no hedging.
+- Prefer tables over prose for structured data.
+- Adapt depth to the task — quick health checks get concise tables, incident investigations get full root cause analysis.
 """,
 )
 
@@ -747,7 +767,7 @@ async def audit_slos(
             input_obj['Auditors'] = auditors_list
 
         # Execute audit API using shared utility
-        result = await execute_audit_api(input_obj, region, banner)
+        result = await execute_audit_api(input_obj, region, banner, audit_type='slo')
 
         # Add prominent pagination information when wildcards were used
         result += format_pagination_info(
@@ -1003,7 +1023,7 @@ async def audit_service_operations(
             input_obj['Auditors'] = auditors_list
 
         # Execute audit API using shared utility
-        result = await execute_audit_api(input_obj, region, banner)
+        result = await execute_audit_api(input_obj, region, banner, audit_type='operation')
 
         # Add prominent pagination information when wildcards were used
         result += format_pagination_info(
