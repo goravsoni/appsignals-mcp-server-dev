@@ -77,6 +77,14 @@ BATCH_SIZE_THRESHOLD = 5
 
 RUN_STATES = {'RUNNING': 'RUNNING', 'PASSED': 'PASSED', 'FAILED': 'FAILED'}
 
+# Response guidelines prepended to audit tool output so the LLM follows them when generating answers.
+RESPONSE_GUIDELINES = (
+    '[RESPONSE RULES: Never fabricate data. If no results found, state what you tried. '
+    'Lead with the finding. Every claim must cite specific data. No speculation. '
+    'Be concise — prefer tables for structured data. No emojis in findings. '
+    'Cite sources: which service, metric, time range, value.]\n\n'
+)
+
 # Initialize FastMCP server
 mcp = FastMCP(
     'cloudwatch-applicationsignals',
@@ -454,7 +462,8 @@ async def audit_services(
 
         # Create banner
         banner = (
-            '[MCP-SERVICE] Application Signals Service Audit\n'
+            RESPONSE_GUIDELINES
+            + '[MCP-SERVICE] Application Signals Service Audit\n'
             f'🎯 Scope: {len(normalized_targets)} service target(s) | Region: {region}\n'
             f'⏰ Time: {unix_start}–{unix_end}\n'
         )
@@ -719,7 +728,8 @@ async def audit_slos(
         auditors_list = parse_auditors(auditors, ['slo'])  # Default to SLO auditor
 
         banner = (
-            '[MCP-SLO] Application Signals SLO Compliance Audit\n'
+            RESPONSE_GUIDELINES
+            + '[MCP-SLO] Application Signals SLO Compliance Audit\n'
             f'🎯 Scope: {len(slo_only_targets)} SLO target(s) | Region: {region}\n'
             f'⏰ Time: {unix_start}–{unix_end}\n'
         )
@@ -971,7 +981,8 @@ async def audit_service_operations(
         )  # Default to operation_metric auditor
 
         banner = (
-            '[MCP-OPERATION] Application Signals Operation Performance Audit\n'
+            RESPONSE_GUIDELINES
+            + '[MCP-OPERATION] Application Signals Operation Performance Audit\n'
             f'🎯 Scope: {len(operation_only_targets)} operation target(s) | Region: {region}\n'
             f'⏰ Time: {unix_start}–{unix_end}\n'
         )
