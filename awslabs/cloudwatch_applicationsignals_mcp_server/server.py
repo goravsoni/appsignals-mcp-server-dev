@@ -63,6 +63,7 @@ from .service_tools import (
 )
 from .slo_tools import get_slo, list_slos
 from .trace_tools import list_slis, query_sampled_traces, search_transaction_spans
+from .rum_tools import rum
 from .utils import parse_timestamp
 from datetime import datetime, timedelta, timezone
 from loguru import logger
@@ -1666,6 +1667,9 @@ mcp.tool()(_with_response_guidelines(audit_group_health))
 mcp.tool()(_with_response_guidelines(get_dependency_topology))
 mcp.tool()(_with_response_guidelines(get_group_changes))
 mcp.tool()(_with_response_guidelines(list_grouping_attribute_definitions))
+
+# RUM tools
+mcp.tool()(_with_response_guidelines(rum))
 
 
 def main():
