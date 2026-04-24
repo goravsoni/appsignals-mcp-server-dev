@@ -1,19 +1,8 @@
-"""Post LLM eval result as a PR comment.
-
-Reads the JSON artifact from run_eval.py. No AWS or LLM access here by
-design (per AWS Security's read/write job separation guidance).
-
-Env vars:
-    GITHUB_TOKEN       Auth (set by Actions).
-    GITHUB_REPOSITORY  owner/repo (set by Actions).
-    PR_NUMBER          PR number.
-    EVAL_RESULT_PATH   Path to the JSON result.
-"""
+"""Post LLM eval result as a PR comment. Stdlib only."""
 
 import json
 import os
 import sys
-import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -38,25 +27,57 @@ def main():
     token = os.environ["GITHUB_TOKEN"]
     repo = os.environ["GITHUB_REPOSITORY"]
     pr_number = os.environ["PR_NUMBER"]
-    result_path = Path(os.environ["EVAL_RESULT_PATH"])
+    result = json.loads(Path(os.environ["EVAL_RESULT_PATH"]).read_text())
 
-    result = json.loads(result_path.read_text(encoding="utf-8"))
-    response = result.get("response_text", "").strip()
+    status = result.get("status", "unknown")
+    status_badge = "PASS" if status == "passed" else "FAIL"
 
-    body_lines = [
+    tool_calls = result.get("tool_calls", [])
+    tools_called = [c.get("name", "?") for c in tool_calls]
+    final_response = (result.get("final_response") or "").strip()
+    failure_reasons = result.get("failure_reasons") or []
+
+    lines = [
         COMMENT_TAG,
-        "## LLM Eval Results",
+        f"## LLM Eval Results: {status_badge}",
         "",
+        f"**Case:** `{result.get('case_name')}`",
         f"**Model:** `{result.get('model_id')}`",
-        f"**Tokens:** {result.get('input_tokens')} in / {result.get('output_tokens')} out",
+        f"**Prompt:** {result.get('prompt')!r}",
         "",
-        "**Response:**",
+        "### Tool calls",
         "",
-        f"> {response}",
+    ]
+    if tool_calls:
+        lines.append("| # | Tool | Arguments (truncated) |")
+        lines.append("|---|------|-----------------------|")
+        for i, c in enumerate(tool_calls, start=1):
+            args_str = json.dumps(c.get("arguments", {}))
+            if len(args_str) > 120:
+                args_str = args_str[:117] + "..."
+            lines.append(f"| {i} | `{c.get('name')}` | `{args_str}` |")
+    else:
+        lines.append("_No tool calls recorded._")
+    lines += ["", "### Final response", ""]
+    if final_response:
+        truncated = final_response if len(final_response) <= 1500 else final_response[:1500] + " [...truncated]"
+        for para in truncated.splitlines():
+            lines.append(f"> {para}" if para else ">")
+    else:
+        lines.append("_No response captured._")
+
+    if failure_reasons:
+        lines += ["", "### Failures", ""]
+        for r in failure_reasons:
+            lines.append(f"- {r}")
+
+    lines += [
+        "",
+        f"Tools called: `{tools_called}`",
         "",
         "_Posted automatically by the `llm-eval` workflow._",
     ]
-    comment_body = "\n".join(body_lines)
+    body = "\n".join(lines)
 
     list_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments?per_page=100"
     comments = gh("GET", list_url, token) or []
@@ -65,12 +86,11 @@ def main():
         None,
     )
     if existing:
-        gh("PATCH", existing["url"], token, {"body": comment_body})
+        gh("PATCH", existing["url"], token, {"body": body})
         print(f"[post-comment] Updated {existing['url']}")
     else:
-        gh("POST", list_url, token, {"body": comment_body})
+        gh("POST", list_url, token, {"body": body})
         print("[post-comment] Created new comment")
-
     return 0
 
 

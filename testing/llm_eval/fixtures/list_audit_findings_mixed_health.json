@@ -1,0 +1,66 @@
+{
+  "StartTime": "2026-04-24T19:00:00Z",
+  "EndTime": "2026-04-24T20:00:00Z",
+  "AuditFindings": [
+    {
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "payment-service",
+        "Environment": "eks:prod/default"
+      },
+      "Type": "service",
+      "AuditorResults": [
+        {
+          "Auditor": "slo",
+          "Description": "All SLOs for payment-service are meeting their targets. Availability at 99.98 percent vs 99.9 target. Latency p99 at 320 ms vs 500 ms target.",
+          "Severity": "info"
+        },
+        {
+          "Auditor": "operation_metric",
+          "Description": "Operation-level metrics healthy across all 4 operations. No fault or error spikes in the last 1 hour.",
+          "Severity": "info"
+        }
+      ]
+    },
+    {
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "cart-service",
+        "Environment": "eks:prod/default"
+      },
+      "Type": "service",
+      "AuditorResults": [
+        {
+          "Auditor": "slo",
+          "Description": "SLO breach: AddToCart availability at 98.2 percent vs 99.9 percent target. Error budget 78 percent consumed in the last 24 hours.",
+          "Severity": "critical"
+        },
+        {
+          "Auditor": "operation_metric",
+          "Description": "Operation AddToCart shows a 4x fault rate increase in the last 45 minutes. Dependency cart-db dynamodb writes throttling.",
+          "Severity": "critical"
+        }
+      ]
+    },
+    {
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "search-service",
+        "Environment": "eks:prod/default"
+      },
+      "Type": "service",
+      "AuditorResults": [
+        {
+          "Auditor": "slo",
+          "Description": "Latency SLO trending toward breach. p99 currently at 840 ms vs 1000 ms target. Trend up 35 percent from baseline.",
+          "Severity": "warning"
+        },
+        {
+          "Auditor": "operation_metric",
+          "Description": "Search operation 5xx rate elevated at 1.8 percent vs typical 0.3 percent baseline.",
+          "Severity": "warning"
+        }
+      ]
+    }
+  ]
+}

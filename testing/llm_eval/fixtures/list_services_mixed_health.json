@@ -1,0 +1,50 @@
+{
+  "StartTime": "2026-04-24T19:00:00Z",
+  "EndTime": "2026-04-24T20:00:00Z",
+  "ServiceSummaries": [
+    {
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "payment-service",
+        "Environment": "eks:prod/default"
+      },
+      "AttributeMaps": [
+        {"Platform": "EKS", "Application": "payments"}
+      ],
+      "MetricReferences": [
+        {"Namespace": "ApplicationSignals", "MetricType": "LATENCY", "MetricName": "Latency"},
+        {"Namespace": "ApplicationSignals", "MetricType": "FAULT", "MetricName": "Fault"},
+        {"Namespace": "ApplicationSignals", "MetricType": "ERROR", "MetricName": "Error"}
+      ]
+    },
+    {
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "cart-service",
+        "Environment": "eks:prod/default"
+      },
+      "AttributeMaps": [
+        {"Platform": "EKS", "Application": "shopping"}
+      ],
+      "MetricReferences": [
+        {"Namespace": "ApplicationSignals", "MetricType": "LATENCY", "MetricName": "Latency"},
+        {"Namespace": "ApplicationSignals", "MetricType": "FAULT", "MetricName": "Fault"}
+      ]
+    },
+    {
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "search-service",
+        "Environment": "eks:prod/default"
+      },
+      "AttributeMaps": [
+        {"Platform": "EKS", "Application": "catalog"}
+      ],
+      "MetricReferences": [
+        {"Namespace": "ApplicationSignals", "MetricType": "LATENCY", "MetricName": "Latency"},
+        {"Namespace": "ApplicationSignals", "MetricType": "FAULT", "MetricName": "Fault"},
+        {"Namespace": "ApplicationSignals", "MetricType": "ERROR", "MetricName": "Error"}
+      ]
+    }
+  ]
+}
