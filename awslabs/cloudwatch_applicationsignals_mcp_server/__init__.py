@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""AWS Application Signals MCP Server."""
+"""AWS Application Signals MCP Server.
+
+An MCP (Model Context Protocol) server exposing tools for inspecting
+Application Signals services, SLOs, canaries, traces, and related
+CloudWatch resources.
+"""
 
 __version__ = '0.1.30'
