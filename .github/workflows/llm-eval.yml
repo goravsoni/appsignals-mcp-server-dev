@@ -1,0 +1,154 @@
+## llm-eval.yml
+##
+## Label-gated LLM evaluation workflow for PRs.
+##
+## Design (see testing/llm_eval/README.md for full rationale):
+##   * pull_request_target so the workflow definition comes from the base branch.
+##   * Runs only after a maintainer applies the `run-llm-eval` label. Label
+##     application requires write permission, giving us authorization gating
+##     per AWS Security's guidance for LLM workflows on GitHub.
+##   * Runs inside the `llm-eval` GitHub Environment which has a required
+##     reviewer. Defense in depth: even if the label check is bypassed, the
+##     job pauses for human approval before AWS credentials are minted.
+##   * OIDC assumes a dedicated, least-privilege role (bedrock:InvokeModel on
+##     a single model). No long-lived IAM keys.
+##   * PR code is checked out into an isolated subdir and only read as data,
+##     never executed.
+##   * Label auto-removed after each run so each subsequent run requires a
+##     fresh maintainer approval (limits LLM quota-exhaustion risk).
+
+name: LLM Eval (PR regression)
+
+on:
+  pull_request_target:
+    types: [labeled, synchronize]
+    paths:
+      - "awslabs/**"
+      - "testing/llm_eval/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: llm-eval-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate: verify the trigger was a legitimate label application by a
+  # maintainer. `pull_request_target` events from fork PRs still run with
+  # secrets, so we must verify the triggering actor ourselves.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: Verify label + actor permissions
+    runs-on: ubuntu-latest
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == 'run-llm-eval') ||
+      (github.event.action == 'synchronize' &&
+       contains(github.event.pull_request.labels.*.name, 'run-llm-eval'))
+    outputs:
+      pr_sha: ${{ steps.resolve.outputs.pr_sha }}
+    steps:
+      - name: Check actor has write permission
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const actor = context.actor;
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: actor,
+            });
+            const allowed = ['admin', 'maintain', 'write'];
+            if (!allowed.includes(perm.permission)) {
+              core.setFailed(
+                `Actor ${actor} has permission "${perm.permission}" which is not ` +
+                `sufficient to trigger LLM evals. Required: one of ${allowed.join(', ')}.`
+              );
+            }
+
+      - name: Resolve PR head SHA
+        id: resolve
+        run: |
+          echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Eval: runs inside the `llm-eval` GitHub Environment, which pauses for a
+  # required reviewer before secrets are released.
+  # ---------------------------------------------------------------------------
+  eval:
+    name: Run Bedrock LLM eval
+    needs: gate
+    runs-on: ubuntu-latest
+    environment: llm-eval
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout base branch (trusted)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install eval harness dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install boto3==1.35.0
+
+      - name: Checkout PR code (untrusted, read-only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.pr_sha }}
+          path: pr-source
+          persist-credentials: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.LLM_EVAL_ROLE_ARN }}
+          role-session-name: llm-eval-pr-${{ github.event.pull_request.number }}
+          aws-region: us-east-1
+
+      - name: Run eval harness
+        env:
+          # Opus 4.5 on Bedrock must be invoked via the US cross-region inference profile.
+          BEDROCK_MODEL_ID: us.anthropic.claude-opus-4-5-20251101-v1:0
+          AWS_REGION: us-east-1
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SOURCE_DIR: ${{ github.workspace }}/pr-source
+        run: |
+          python testing/llm_eval/run_eval.py
+
+  # ---------------------------------------------------------------------------
+  # Cleanup: remove the `run-llm-eval` label so the next run requires a fresh
+  # maintainer approval.
+  # ---------------------------------------------------------------------------
+  remove-label:
+    name: Remove run-llm-eval label
+    needs: eval
+    if: always() && needs.eval.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'run-llm-eval',
+              });
+            } catch (e) {
+              if (e.status !== 404) { throw e; }
+            }
