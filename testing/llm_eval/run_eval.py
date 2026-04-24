@@ -1,21 +1,9 @@
-"""LLM eval harness for the Application Signals MCP Server.
+"""Orchestrator for the Application Signals MCP LLM eval suite.
 
-Hosts the PR's MCP server in-process over streamable HTTP on 127.0.0.1,
-wires up a botocore Stubber that intercepts AWS calls and returns fixture
-data, runs a Strands agent (Bedrock Opus 4.5) with a fixed prompt that
-exercises the MCP server's tools, and asserts both that the agent called
-the expected tool and that its final response mentions the fixture data.
-
-Env vars:
-    BEDROCK_MODEL_ID   Model id (Opus 4.5 inference profile).
-    AWS_REGION         Bedrock + Application Signals region.
-    PR_NUMBER          Echoed into the result for the PR comment.
-    PR_SOURCE_DIR      Path to the checked-out PR code. Unused here since
-                       we `pip install -e` the PR before running; kept for
-                       parity with the earlier harness signature.
-    EVAL_RESULT_PATH   Output JSON path.
-    CASE_FILE          Optional path to a case JSON (default: first case
-                       under testing/llm_eval/cases/).
+Walks every case JSON under cases/{category}/, runs each one through the MCP
+server with stubbed AWS calls, scores it (programmatic + LLM-as-judge),
+writes a JSON run result plus a standalone HTML report, and exits non-zero
+if any threshold is missed.
 """
 
 from __future__ import annotations
@@ -34,13 +22,18 @@ from botocore.stub import Stubber
 
 
 HARNESS_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(HARNESS_DIR))
+
+from judge import judge_response, tool_correctness_score  # noqa: E402
+from reporter import render_report  # noqa: E402
+from scorer import ToolCall, combine_case_score, score_tool_accuracy  # noqa: E402
+
+
 FIXTURES_DIR = HARNESS_DIR / "fixtures"
 CASES_DIR = HARNESS_DIR / "cases"
+DEFAULT_THRESHOLD = 90
+SOFT_FLOOR = 70  # no individual case may score below this
 
-
-# ---------------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------------
 
 def _log(msg: str) -> None:
     print(f"[llm-eval] {msg}", flush=True)
@@ -52,17 +45,15 @@ def _pick_free_port() -> int:
         return s.getsockname()[1]
 
 
-def _load_case() -> dict:
-    case_path_env = os.environ.get("CASE_FILE")
-    if case_path_env:
-        path = Path(case_path_env)
-    else:
-        cases = sorted(CASES_DIR.glob("*.json"))
-        if not cases:
-            raise FileNotFoundError(f"No case JSON under {CASES_DIR}")
-        path = cases[0]
-    _log(f"Using case file: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+def _discover_cases() -> list[Path]:
+    """Find every case JSON under cases/{category}/ subdirs."""
+    paths: list[Path] = []
+    if not CASES_DIR.is_dir():
+        return paths
+    for category_dir in sorted(p for p in CASES_DIR.iterdir() if p.is_dir()):
+        for case_file in sorted(category_dir.glob("*.json")):
+            paths.append(case_file)
+    return paths
 
 
 def _load_fixture(name: str) -> dict:
@@ -70,129 +61,219 @@ def _load_fixture(name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# AWS stubbing
+# MCP hosting
 # ---------------------------------------------------------------------------
 
-def _activate_stubber(case: dict) -> Stubber:
-    """Attach a Stubber to the MCP server's application-signals client.
+_mcp_thread: threading.Thread | None = None
+_mcp_port: int | None = None
 
-    Import inside the function so this happens AFTER we've set any env vars
-    the server's aws_clients module reads at import time.
+
+def _ensure_mcp_server() -> str:
+    """Start the MCP server in-process once and return its URL.
+
+    We reuse a single server across all cases. Each case re-activates a fresh
+    Stubber on the same underlying boto3 client.
     """
-    from awslabs.cloudwatch_applicationsignals_mcp_server import aws_clients
+    global _mcp_thread, _mcp_port
+    if _mcp_port is not None:
+        return f"http://127.0.0.1:{_mcp_port}/mcp/"
 
-    client = aws_clients.applicationsignals_client
-    stubber = Stubber(client)
-
-    # Queue up responses for every call the agent might make. The stubber
-    # matches responses in FIFO order to operations. We add the same fixture
-    # multiple times because the MCP server can make several list_services
-    # or list_audit_findings calls (wildcard expansion + batching).
-    list_services_fixture = _load_fixture(case["fixtures"]["list_services"])
-    list_audit_findings_fixture = _load_fixture(case["fixtures"]["list_audit_findings"])
-
-    for _ in range(10):
-        stubber.add_response("list_services", list_services_fixture)
-        stubber.add_response("list_audit_findings", list_audit_findings_fixture)
-
-    stubber.activate()
-    _log("Stubber activated on applicationsignals_client")
-    return stubber
-
-
-# ---------------------------------------------------------------------------
-# MCP server hosting
-# ---------------------------------------------------------------------------
-
-def _start_mcp_server(port: int) -> threading.Thread:
-    """Import the MCP server and run it over streamable HTTP in a thread."""
     from awslabs.cloudwatch_applicationsignals_mcp_server import server as mcp_server_module
 
-    mcp = mcp_server_module.mcp  # the FastMCP instance
-    # FastMCP settings for streamable HTTP
+    mcp = mcp_server_module.mcp
+    port = _pick_free_port()
     mcp.settings.host = "127.0.0.1"
     mcp.settings.port = port
-    # The streamable-http transport serves at /mcp/ by default
 
-    def run():
+    def run() -> None:
         try:
             mcp.run(transport="streamable-http")
         except Exception as exc:  # noqa: BLE001
             _log(f"MCP server thread crashed: {exc!r}")
 
-    thread = threading.Thread(target=run, name="mcp-server", daemon=True)
-    thread.start()
+    t = threading.Thread(target=run, name="mcp-server", daemon=True)
+    t.start()
 
-    # Wait for the server to start accepting connections
     deadline = time.time() + 30
-    url_host = ("127.0.0.1", port)
     while time.time() < deadline:
         try:
-            with socket.create_connection(url_host, timeout=1):
-                _log(f"MCP server listening on http://{url_host[0]}:{url_host[1]}/mcp/")
-                return thread
+            with socket.create_connection(("127.0.0.1", port), timeout=1):
+                _mcp_thread = t
+                _mcp_port = port
+                url = f"http://127.0.0.1:{port}/mcp/"
+                _log(f"MCP server listening on {url}")
+                return url
         except OSError:
             time.sleep(0.25)
     raise RuntimeError("MCP server failed to become ready within 30s")
 
 
 # ---------------------------------------------------------------------------
-# Strands agent + tool-call capture
+# Stubber
 # ---------------------------------------------------------------------------
 
-class ToolCallCapture:
-    """Collects tool calls made by the agent during its run."""
+def _activate_case_stubs(case: dict) -> Stubber:
+    """Activate Stubber with fixtures for one case. Caller deactivates."""
+    from awslabs.cloudwatch_applicationsignals_mcp_server import aws_clients
 
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
+    client = aws_clients.applicationsignals_client
+    stubber = Stubber(client)
 
-    def record(self, name: str, arguments: dict[str, Any]) -> None:
-        self.calls.append({"name": name, "arguments": arguments})
+    fixtures = case.get("fixtures", {})
+    # Map case-fixture keys to boto3 operation names. The tool set grows as
+    # we add more cases.
+    operation_to_fixture = {
+        "list_services": fixtures.get("list_services"),
+        "list_audit_findings": fixtures.get("list_audit_findings"),
+        "list_service_level_objectives": fixtures.get("list_slos"),
+    }
+    # Fill many repeats so wildcard expansion + batching doesn't run out.
+    for _ in range(15):
+        for op_name, fixture_name in operation_to_fixture.items():
+            if not fixture_name:
+                continue
+            response = _load_fixture(fixture_name)
+            stubber.add_response(op_name, response)
 
-    @property
-    def tool_names(self) -> list[str]:
-        return [c["name"] for c in self.calls]
+    stubber.activate()
+    return stubber
 
 
-def _run_agent(mcp_url: str, model_id: str, region: str, prompt: str,
-               capture: ToolCallCapture) -> str:
-    """Run a Strands agent against the MCP server. Returns the final text."""
+# ---------------------------------------------------------------------------
+# Agent loop
+# ---------------------------------------------------------------------------
+
+def _run_case(mcp_url: str, case: dict, model_id: str, region: str) -> dict[str, Any]:
+    """Run a single case. Returns a result dict ready for the report."""
     from mcp.client.streamable_http import streamablehttp_client
     from strands import Agent
     from strands.models import BedrockModel
     from strands.tools.mcp.mcp_client import MCPClient
 
+    started = time.monotonic()
+    stubber = _activate_case_stubs(case)
+
     def transport():
         return streamablehttp_client(mcp_url)
 
     mcp_client = MCPClient(transport)
-
     bedrock = BedrockModel(model_id=model_id, region_name=region)
 
-    with mcp_client:
-        mcp_tools = mcp_client.list_tools_sync()
-        _log(f"Agent sees {len(mcp_tools)} tools from MCP server")
+    tool_calls: list[ToolCall] = []
+    tool_outputs: list[str] = []
+    final_response = ""
+    error: str | None = None
 
-        agent = Agent(model=bedrock, tools=mcp_tools)
-        result = agent(prompt)
+    try:
+        with mcp_client:
+            mcp_tools = mcp_client.list_tools_sync()
+            agent = Agent(model=bedrock, tools=mcp_tools)
+            result = agent(case["prompt"])
+            final_response = str(result)
 
-        # Walk the agent's message history to find every tool use block.
-        # Strands stores messages as a list of {role, content} dicts where
-        # content is a list of blocks. Tool uses appear as {"toolUse": {...}}.
-        for msg in agent.messages:
-            for block in msg.get("content", []) or []:
-                if isinstance(block, dict) and "toolUse" in block:
-                    tu = block["toolUse"]
-                    capture.record(
-                        name=tu.get("name", "unknown"),
-                        arguments=tu.get("input", {}) or {},
-                    )
+            # Walk the conversation for toolUse + toolResult blocks.
+            for msg in agent.messages:
+                for block in msg.get("content", []) or []:
+                    if not isinstance(block, dict):
+                        continue
+                    if "toolUse" in block:
+                        tu = block["toolUse"]
+                        tool_calls.append(ToolCall(
+                            name=tu.get("name", "unknown"),
+                            arguments=tu.get("input", {}) or {},
+                        ))
+                    elif "toolResult" in block:
+                        tr = block["toolResult"]
+                        text_parts = []
+                        for c in tr.get("content", []) or []:
+                            if isinstance(c, dict) and "text" in c:
+                                text_parts.append(c["text"])
+                        is_error = tr.get("status") == "error"
+                        if is_error and tool_calls:
+                            tool_calls[-1].error = True
+                        if text_parts:
+                            tool_outputs.append("\n".join(text_parts))
+    except Exception as exc:  # noqa: BLE001
+        error = repr(exc)
+        _log(f"Case {case['name']} raised: {error}")
+    finally:
+        try:
+            stubber.deactivate()
+        except Exception:  # noqa: BLE001
+            pass
 
-    for call in capture.calls:
-        args_preview = json.dumps(call["arguments"])[:200]
-        _log(f"Tool call: {call['name']}({args_preview})")
+    duration_s = time.monotonic() - started
 
-    return str(result)
+    ta = score_tool_accuracy(
+        tool_calls=tool_calls,
+        expected_tools=case.get("expected_tool_calls", []),
+        final_response=final_response,
+        duration_s=duration_s,
+    )
+
+    # LLM-as-judge
+    try:
+        judge = judge_response(
+            prompt=case["prompt"],
+            expected_behavior=case.get("expected_behavior", ""),
+            tool_calls=[{"name": c.name, "arguments": c.arguments} for c in tool_calls],
+            tool_outputs=tool_outputs,
+            final_response=final_response,
+            model_id=model_id,
+            region=region,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log(f"Judge call failed for {case['name']}: {exc!r}")
+        judge = {
+            "response_completeness": 0,
+            "response_accuracy": 0,
+            "tool_selection": 0,
+            "unnecessary_clarification": False,
+            "verdict": "fail",
+            "reasoning": f"Judge call failed: {exc!r}",
+            "_input_tokens": 0,
+            "_output_tokens": 0,
+        }
+
+    tc_score = tool_correctness_score(judge)
+    case_score = combine_case_score(ta.score, tc_score)
+    status = "pass" if case_score >= DEFAULT_THRESHOLD else "fail"
+
+    return {
+        "name": case["name"],
+        "category": case["category"],
+        "prompt": case["prompt"],
+        "expected_behavior": case.get("expected_behavior", ""),
+        "expected_tool_calls": case.get("expected_tool_calls", []),
+        "tool_calls": [{"name": c.name, "arguments": c.arguments, "error": c.error} for c in tool_calls],
+        "tool_outputs_captured": len(tool_outputs),
+        "final_response": final_response,
+        "error": error,
+        "tool_accuracy": {
+            "score": ta.score,
+            "coverage_pct": ta.coverage_pct,
+            "missing_tools": ta.missing_tools,
+            "extra_tools": ta.extra_tools,
+            "tool_call_count": ta.tool_call_count,
+            "max_tool_repeats": ta.max_tool_repeats,
+            "explosion_detected": ta.explosion_detected,
+            "retry_count": ta.retry_count,
+            "asked_clarification": ta.asked_clarification,
+            "zero_tool_calls": ta.zero_tool_calls,
+            "error_count": ta.error_count,
+            "duration_s": ta.duration_s,
+            "latency_grade": ta.latency_grade,
+            "penalties": ta.penalties,
+        },
+        "tool_correctness_score": tc_score,
+        "judge": judge,
+        "case_score": case_score,
+        "status": status,
+        "token_usage": {
+            "judge_input": judge.get("_input_tokens"),
+            "judge_output": judge.get("_output_tokens"),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -200,81 +281,104 @@ def _run_agent(mcp_url: str, model_id: str, region: str, prompt: str,
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    started = datetime.now(timezone.utc).isoformat()
     model_id = os.environ["BEDROCK_MODEL_ID"]
     region = os.environ.get("AWS_REGION", "us-east-1")
     pr_number = os.environ.get("PR_NUMBER", "local")
     result_path = Path(os.environ["EVAL_RESULT_PATH"])
+    report_path = Path(os.environ.get("EVAL_REPORT_PATH", str(result_path.with_suffix(".html"))))
+    threshold = int(os.environ.get("EVAL_THRESHOLD", DEFAULT_THRESHOLD))
 
-    case = _load_case()
+    started_iso = datetime.now(timezone.utc).isoformat()
     _log(f"Model: {model_id}")
     _log(f"Region: {region}")
-    _log(f"Case: {case['name']}")
-    _log(f"Prompt: {case['prompt']!r}")
+    _log(f"Threshold: {threshold}")
 
-    stubber = _activate_stubber(case)
+    case_files = _discover_cases()
+    if not case_files:
+        raise RuntimeError(f"No case JSONs found under {CASES_DIR}")
+    _log(f"Discovered {len(case_files)} cases")
 
-    port = _pick_free_port()
-    _start_mcp_server(port)
-    mcp_url = f"http://127.0.0.1:{port}/mcp/"
+    mcp_url = _ensure_mcp_server()
 
-    capture = ToolCallCapture()
-    status = "passed"
-    failure_reasons: list[str] = []
-    final_response = ""
+    cases_out: list[dict[str, Any]] = []
+    total_start = time.monotonic()
+    for path in case_files:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        raw.setdefault("category", path.parent.name)
+        raw.setdefault("name", path.stem)
+        _log(f"Running case: {raw['category']}/{raw['name']}")
+        cases_out.append(_run_case(mcp_url, raw, model_id, region))
+    total_duration = time.monotonic() - total_start
 
-    try:
-        final_response = _run_agent(mcp_url, model_id, region, case["prompt"], capture)
-        _log(f"Final response ({len(final_response)} chars)")
-    except Exception as exc:  # noqa: BLE001
-        status = "failed"
-        failure_reasons.append(f"Agent execution raised: {exc!r}")
-        _log(f"ERROR: {exc!r}")
-    finally:
-        try:
-            stubber.deactivate()
-        except Exception:  # noqa: BLE001
-            pass
+    cases_passed = sum(1 for c in cases_out if c["status"] == "pass")
+    cases_total = len(cases_out)
+    overall_score = round(sum(c["case_score"] for c in cases_out) / max(1, cases_total), 1)
 
-    # ----- assertions -----
-    asserts = case.get("assertions", {})
+    # Category averages.
+    by_category: dict[str, list[dict[str, Any]]] = {}
+    for c in cases_out:
+        by_category.setdefault(c["category"], []).append(c)
+    category_scores = {
+        cat: {
+            "average_score": round(sum(x["case_score"] for x in lst) / len(lst), 1),
+            "passed": sum(1 for x in lst if x["status"] == "pass"),
+            "total": len(lst),
+        }
+        for cat, lst in by_category.items()
+    }
 
-    for required in asserts.get("required_tool_calls", []):
-        if required not in capture.tool_names:
-            status = "failed"
-            failure_reasons.append(
-                f"Agent did not call required tool '{required}'. "
-                f"Tools called: {capture.tool_names}"
-            )
+    floor_violations = [c["name"] for c in cases_out if c["case_score"] < SOFT_FLOOR]
+    category_failures = [cat for cat, stats in category_scores.items() if stats["average_score"] < threshold]
 
-    needles = asserts.get("response_must_contain_any_of", [])
-    required_mentions = asserts.get("response_must_mention_count", 1)
-    if needles:
-        hits = [n for n in needles if n.lower() in final_response.lower()]
-        if len(hits) < required_mentions:
-            status = "failed"
-            failure_reasons.append(
-                f"Response mentioned {len(hits)}/{required_mentions} required needles. "
-                f"Hits: {hits}. Needles: {needles}"
-            )
+    overall_status = "pass"
+    if cases_passed < cases_total:
+        overall_status = "fail"
+    if category_failures:
+        overall_status = "fail"
+    if floor_violations:
+        overall_status = "fail"
+    if overall_score < threshold:
+        overall_status = "fail"
 
-    result = {
-        "status": status,
-        "started_at": started,
+    total_input_tokens = sum(c["token_usage"].get("judge_input") or 0 for c in cases_out)
+    total_output_tokens = sum(c["token_usage"].get("judge_output") or 0 for c in cases_out)
+
+    summary = {
+        "overall_status": overall_status,
+        "overall_score": overall_score,
+        "threshold": threshold,
+        "soft_floor": SOFT_FLOOR,
+        "cases_passed": cases_passed,
+        "cases_total": cases_total,
+        "category_scores": category_scores,
+        "category_failures": category_failures,
+        "floor_violations": floor_violations,
+        "total_duration_s": round(total_duration, 2),
+        "total_input_tokens": total_input_tokens,
+        "total_output_tokens": total_output_tokens,
+    }
+
+    run_result = {
+        "generated_at": started_iso,
         "pr_number": pr_number,
         "model_id": model_id,
         "region": region,
-        "case_name": case["name"],
-        "prompt": case["prompt"],
-        "tool_calls": capture.calls,
-        "final_response": final_response,
-        "failure_reasons": failure_reasons,
+        "summary": summary,
+        "cases": cases_out,
     }
-    result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
-    _log(f"Status: {status}")
-    _log(f"Tools called: {capture.tool_names}")
-    _log(f"Wrote result to {result_path}")
-    return 0 if status == "passed" else 1
+
+    result_path.write_text(json.dumps(run_result, indent=2), encoding="utf-8")
+    _log(f"Wrote JSON result to {result_path}")
+
+    report_path.write_text(render_report(run_result), encoding="utf-8")
+    _log(f"Wrote HTML report to {report_path}")
+
+    _log(f"Overall: {overall_status} ({overall_score}/{threshold})")
+    _log(f"Cases passed: {cases_passed}/{cases_total}")
+    for cat, stats in category_scores.items():
+        _log(f"  {cat}: {stats['average_score']} ({stats['passed']}/{stats['total']} passed)")
+
+    return 0 if overall_status == "pass" else 1
 
 
 if __name__ == "__main__":

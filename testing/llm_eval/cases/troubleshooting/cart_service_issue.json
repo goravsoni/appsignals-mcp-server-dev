@@ -1,0 +1,11 @@
+{
+  "name": "cart_service_issue",
+  "category": "troubleshooting",
+  "prompt": "My cart-service is acting up. Can you help me figure out what's going on?",
+  "expected_behavior": "Use audit_services targeted at cart-service (or a cart-containing wildcard) to get findings. Identify the SLO breach on AddToCart, call out the 4x fault rate increase, and point at the DynamoDB throttling on the cart-db dependency as the likely root cause.",
+  "expected_tool_calls": ["audit_services"],
+  "fixtures": {
+    "list_services": "list_services_mixed_health.json",
+    "list_audit_findings": "list_audit_findings_mixed_health.json"
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "SloSummaries": [
+    {
+      "Arn": "arn:aws:application-signals:us-east-1:123456789012:slo/payment-service-availability",
+      "Name": "payment-service-availability",
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "payment-service",
+        "Environment": "eks:prod/default"
+      },
+      "OperationName": "ProcessPayment",
+      "CreatedTime": "2026-02-01T12:00:00Z",
+      "EvaluationType": "PeriodBased"
+    },
+    {
+      "Arn": "arn:aws:application-signals:us-east-1:123456789012:slo/cart-service-addtocart-availability",
+      "Name": "cart-service-addtocart-availability",
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "cart-service",
+        "Environment": "eks:prod/default"
+      },
+      "OperationName": "AddToCart",
+      "CreatedTime": "2026-02-05T09:30:00Z",
+      "EvaluationType": "PeriodBased"
+    },
+    {
+      "Arn": "arn:aws:application-signals:us-east-1:123456789012:slo/search-service-latency-p99",
+      "Name": "search-service-latency-p99",
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "search-service",
+        "Environment": "eks:prod/default"
+      },
+      "OperationName": "Search",
+      "CreatedTime": "2026-01-15T08:00:00Z",
+      "EvaluationType": "PeriodBased"
+    },
+    {
+      "Arn": "arn:aws:application-signals:us-east-1:123456789012:slo/checkout-service-availability",
+      "Name": "checkout-service-availability",
+      "KeyAttributes": {
+        "Type": "Service",
+        "Name": "checkout-service",
+        "Environment": "eks:prod/default"
+      },
+      "OperationName": "Checkout",
+      "CreatedTime": "2026-02-10T14:22:00Z",
+      "EvaluationType": "RequestBased"
+    }
+  ]
+}

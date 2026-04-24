@@ -1,0 +1,10 @@
+{
+  "name": "list_slos",
+  "category": "monitoring",
+  "prompt": "What SLOs do I have configured?",
+  "expected_behavior": "Use list_slos to retrieve configured SLOs. Summarize by service or count. At minimum mention the total number and a few example names.",
+  "expected_tool_calls": ["list_slos"],
+  "fixtures": {
+    "list_slos": "list_slos_basic.json"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "services_health_overview",
+  "category": "monitoring",
+  "prompt": "How are my services doing?",
+  "expected_behavior": "Use audit_services with a wildcard service target to get an overall health audit. Summarize the findings by service, calling out any SLO breaches or elevated error rates. Name the affected services.",
+  "expected_tool_calls": ["audit_services"],
+  "fixtures": {
+    "list_services": "list_services_mixed_health.json",
+    "list_audit_findings": "list_audit_findings_mixed_health.json"
+  }
+}
