@@ -120,6 +120,7 @@ jobs:
 
       - name: Run eval harness
         env:
+          PYTHONUNBUFFERED: "1"
           BEDROCK_MODEL_ID: us.anthropic.claude-opus-4-5-20251101-v1:0
           AWS_REGION: us-east-1
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -127,12 +128,15 @@ jobs:
           EVAL_RESULT_PATH: ${{ github.workspace }}/eval-result.json
         run: |
           python testing/llm_eval/run_eval.py
+          echo "--- Post-run file listing ---"
+          ls -la "${EVAL_RESULT_PATH}" || echo "RESULT FILE MISSING"
 
       - name: Upload eval result artifact
         uses: actions/upload-artifact@v4
         with:
           name: eval-result
-          path: eval-result.json
+          path: ${{ github.workspace }}/eval-result.json
+          if-no-files-found: error
           retention-days: 7
 
   # ---------------------------------------------------------------------------
