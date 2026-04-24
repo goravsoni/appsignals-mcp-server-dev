@@ -92,7 +92,9 @@ jobs:
       - name: Checkout base branch (trusted)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          # Always check out the current workflow branch (main), not the PR's
+          # historical base, so harness changes take effect immediately.
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -156,7 +158,7 @@ jobs:
       - name: Checkout base branch (for post_comment.py)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
