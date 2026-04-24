@@ -8,14 +8,15 @@
 ##     application requires write permission, giving us authorization gating
 ##     per AWS Security's guidance for LLM workflows on GitHub.
 ##   * Runs inside the `llm-eval` GitHub Environment which has a required
-##     reviewer. Defense in depth: even if the label check is bypassed, the
-##     job pauses for human approval before AWS credentials are minted.
+##     reviewer. Defense in depth.
 ##   * OIDC assumes a dedicated, least-privilege role (bedrock:InvokeModel on
 ##     a single model). No long-lived IAM keys.
-##   * PR code is checked out into an isolated subdir and only read as data,
-##     never executed.
-##   * Label auto-removed after each run so each subsequent run requires a
-##     fresh maintainer approval (limits LLM quota-exhaustion risk).
+##   * Read/write job separation: `eval` reasons with Bedrock but cannot post
+##     to the PR. `post-comment` posts to the PR but cannot talk to AWS or
+##     the LLM. The only data that flows between them is a sanitized JSON
+##     artifact.
+##   * PR code is checked out into an isolated subdir and only read as data.
+##   * Label auto-removed after each run.
 
 name: LLM Eval (PR regression)
 
@@ -36,8 +37,7 @@ concurrency:
 jobs:
   # ---------------------------------------------------------------------------
   # Gate: verify the trigger was a legitimate label application by a
-  # maintainer. `pull_request_target` events from fork PRs still run with
-  # secrets, so we must verify the triggering actor ourselves.
+  # maintainer.
   # ---------------------------------------------------------------------------
   gate:
     name: Verify label + actor permissions
@@ -73,8 +73,10 @@ jobs:
           echo "pr_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------------
-  # Eval: runs inside the `llm-eval` GitHub Environment, which pauses for a
-  # required reviewer before secrets are released.
+  # Eval: reasons with Bedrock. `pull-requests: write` is intentionally NOT
+  # granted here — if prompt injection in PR files tries to get the LLM to
+  # leak data to the PR, it cannot. The only egress from this job is the
+  # eval-result artifact.
   # ---------------------------------------------------------------------------
   eval:
     name: Run Bedrock LLM eval
@@ -118,17 +120,62 @@ jobs:
 
       - name: Run eval harness
         env:
-          # Opus 4.5 on Bedrock must be invoked via the US cross-region inference profile.
           BEDROCK_MODEL_ID: us.anthropic.claude-opus-4-5-20251101-v1:0
           AWS_REGION: us-east-1
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_SOURCE_DIR: ${{ github.workspace }}/pr-source
+          EVAL_RESULT_PATH: ${{ github.workspace }}/eval-result.json
         run: |
           python testing/llm_eval/run_eval.py
 
+      - name: Upload eval result artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-result
+          path: eval-result.json
+          retention-days: 7
+
   # ---------------------------------------------------------------------------
-  # Cleanup: remove the `run-llm-eval` label so the next run requires a fresh
-  # maintainer approval.
+  # Post-comment: writes to the PR. No AWS access, no LLM access. Its only
+  # input is the artifact from the eval job, which has already been scrubbed
+  # for secrets. This is the read/write separation per AWS Security guidance.
+  # ---------------------------------------------------------------------------
+  post-comment:
+    name: Post result comment on PR
+    needs: eval
+    if: always() && needs.eval.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - name: Checkout base branch (for post_comment.py)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download eval result artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-result
+          path: artifact
+
+      - name: Post comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVAL_RESULT_PATH: ${{ github.workspace }}/artifact/eval-result.json
+        run: |
+          python testing/llm_eval/post_comment.py
+
+  # ---------------------------------------------------------------------------
+  # Cleanup: remove the label so the next run requires fresh maintainer
+  # action. Runs regardless of eval outcome.
   # ---------------------------------------------------------------------------
   remove-label:
     name: Remove run-llm-eval label
