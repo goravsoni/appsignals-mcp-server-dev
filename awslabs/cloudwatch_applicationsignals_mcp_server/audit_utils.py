@@ -22,6 +22,12 @@ from datetime import datetime, timezone
 from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .audit_presentation_utils import (
+    generate_findings_summary_line,
+    label_finding_types,
+    truncate_findings_by_severity,
+)
+
 
 # Constants
 DEFAULT_BATCH_SIZE = 5
@@ -197,6 +203,15 @@ async def execute_audit_api(input_obj: Dict[str, Any], region: str, banner: str)
             aggregated_findings.extend(batch_findings)
 
     # Create final aggregated response
+    # --- Improvement 1: Label finding types for clarity ---
+    # Prefix descriptions with [FAULT RATE], [ERROR RATE], [LATENCY]
+    # so the agent cannot conflate different metric types.
+    aggregated_findings = label_finding_types(aggregated_findings)
+
+    # --- Improvement 2: Truncate by severity if response is too large ---
+    # Preserve HIGH severity findings, drop LOW/INFO first.
+    aggregated_findings, dropped_count = truncate_findings_by_severity(aggregated_findings)
+
     final_result = {
         'AuditFindings': aggregated_findings,
     }
@@ -214,8 +229,19 @@ async def execute_audit_api(input_obj: Dict[str, Any], region: str, banner: str)
                 )
         final_result['ListAuditFindingsErrors'] = error_details
 
+    # --- Improvement 3: Lead-with-answer summary line ---
+    summary_line = generate_findings_summary_line(aggregated_findings)
+
+    # Add truncation notice if findings were dropped
+    truncation_notice = ''
+    if dropped_count > 0:
+        truncation_notice = (
+            f'⚠️ TRUNCATED: {dropped_count} lower-severity finding(s) omitted '
+            f'to fit response size. High-severity findings preserved.\n\n'
+        )
+
     final_observation_text = json.dumps(final_result, indent=2, default=str)
-    return banner + final_observation_text
+    return banner + summary_line + truncation_notice + final_observation_text
 
 
 def _create_service_target(

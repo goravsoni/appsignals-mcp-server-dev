@@ -18,6 +18,133 @@ import json
 from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
 
+# Mapping from finding Type to human-readable metric label.
+# Prevents agents from conflating fault rate with error rate.
+FINDING_TYPE_LABELS = {
+    'Availability': 'FAULT RATE',
+    'Error': 'ERROR RATE',
+    'Latency': 'LATENCY',
+}
+
+# Maximum response size in characters before truncation kicks in.
+MAX_RESPONSE_CHARS = 18000
+
+
+def generate_findings_summary_line(findings: List[Dict[str, Any]]) -> str:
+    """Generate a one-line natural-language summary of audit findings.
+
+    Placed at the top of the response so the agent can lead with the answer.
+    Returns empty string if there are no findings.
+    """
+    if not findings:
+        return ''
+
+    # Count by severity
+    high = [f for f in findings if _finding_severity(f) == 'HIGH']
+    total = len(findings)
+
+    if not high:
+        return f'📋 SUMMARY: {total} finding(s), none high-severity.\n\n'
+
+    # Build summary from the first (most important) HIGH finding
+    first = high[0]
+    service = first.get('KeyAttributes', {}).get('Name', 'unknown service')
+    operation = first.get('Operation', '')
+    finding_type = first.get('Type', '')
+    label = FINDING_TYPE_LABELS.get(finding_type, finding_type)
+
+    # Extract the key metric from the first auditor result
+    desc = ''
+    auditor_results = first.get('AuditorResults', [])
+    if auditor_results:
+        desc = auditor_results[0].get('Description', '')
+
+    parts = [f'🚨 SUMMARY: {len(high)} high-severity finding(s)']
+    if total > len(high):
+        parts[0] += f' ({total} total)'
+    parts.append(f'— {service}')
+    if operation:
+        parts.append(f'/ {operation}')
+    if label:
+        parts.append(f'[{label}]')
+    if desc:
+        # Take just the first sentence of the description
+        first_sentence = desc.split('.')[0].strip()
+        if first_sentence:
+            parts.append(f': {first_sentence}.')
+
+    return ' '.join(parts) + '\n\n'
+
+
+def label_finding_types(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Prefix each finding's auditor descriptions with a metric-type label.
+
+    Adds [FAULT RATE], [ERROR RATE], or [LATENCY] prefix to the Description
+    field so the agent cannot conflate different metric types.
+
+    Modifies findings in place and returns them.
+    """
+    for finding in findings:
+        finding_type = finding.get('Type', '')
+        label = FINDING_TYPE_LABELS.get(finding_type)
+        if not label:
+            continue
+
+        for auditor_result in finding.get('AuditorResults', []):
+            desc = auditor_result.get('Description', '')
+            # Don't double-label
+            if desc and not desc.startswith('['):
+                auditor_result['Description'] = f'[{label}] {desc}'
+
+    return findings
+
+
+def truncate_findings_by_severity(
+    findings: List[Dict[str, Any]], max_chars: int = MAX_RESPONSE_CHARS
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Truncate findings to fit within a character budget, preserving HIGH severity first.
+
+    Returns:
+        Tuple of (truncated_findings, count_of_dropped_findings)
+    """
+    if not findings:
+        return findings, 0
+
+    # Severity priority: HIGH first, then everything else
+    severity_order = {'HIGH': 0, 'CRITICAL': 0, 'MEDIUM': 1, 'WARNING': 1, 'LOW': 2, 'INFO': 2}
+    sorted_findings = sorted(
+        findings, key=lambda f: severity_order.get(_finding_severity(f), 2)
+    )
+
+    kept = []
+    current_size = 0
+    dropped = 0
+
+    for finding in sorted_findings:
+        finding_size = len(json.dumps(finding, default=str))
+        if current_size + finding_size > max_chars and kept:
+            # We've exceeded the budget and already have at least one finding
+            dropped += 1
+            continue
+        kept.append(finding)
+        current_size += finding_size
+
+    return kept, dropped
+
+
+def _finding_severity(finding: Dict[str, Any]) -> str:
+    """Extract the severity from a finding, checking AuditorResults if needed."""
+    # Check top-level Severity first
+    severity = finding.get('Severity', '').upper()
+    if severity:
+        return severity
+    # Fall back to first AuditorResult severity
+    for ar in finding.get('AuditorResults', []):
+        s = ar.get('Severity', '').upper()
+        if s:
+            return s
+    return 'INFO'
+
 
 def extract_findings_summary(audit_result: str) -> Tuple[List[Dict[str, Any]], str]:
     """Extract findings from audit result and return summary with original result.
